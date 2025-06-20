@@ -365,16 +365,31 @@ PVOID initialize(ULONG64 numBytes) {
 LIST_ENTRY headFreeList;
 LIST_ENTRY headActiveList;
 
+// LONG64 getMaxFrameNumber(VOID) {
+//     ULONG64 maxFrameNumber = 0;
+//
+//     for (int i = 0; i < NUMBER_OF_PHYSICAL_PAGES; ++i) {
+//         maxFrameNumber = max(maxFrameNumber, physical_page_numbers[i]);
+//     }
+//     return maxFrameNumber;
+// }
+
+pte* ptes;
+pfn* pfnStart;
+pfn* pfnEnd;
+PULONG_PTR vaStart;
+
 VOID initializeListHeads() {
     headFreeList.Flink = &headFreeList;
     headFreeList.Blink = &headFreeList;
     headActiveList.Flink = &headActiveList;
     headActiveList.Blink = &headActiveList;
+    // pfnStart = (pfn*)initialize(NUMBER_OF_PHYSICAL_PAGES * sizeof(pfn));
+    // ULONG64 max = getMaxFrameNumber();
+    // max+=1;
+    // pfnStart = VirtualAlloc(NULL,sizeof(pfn)*max,MEM_RESERVE,PAGE_READWRITE);
+    // pfnEnd = pfnStart + max;
 }
-
-pte* pt;
-pfn* pfnStart;
-PULONG_PTR vaStart;
 
 VOID linkAdd(pfn* pfn, boolean active) {
     LIST_ENTRY* head;
@@ -415,12 +430,12 @@ pfn* linkRemove(boolean active) {
 
 pte* va2pte(PVOID va) {
     ULONG64 index = ((ULONG_PTR)va - (ULONG_PTR) vaStart) / PAGE_SIZE;
-    pte* pte = pt + index;
+    pte* pte = ptes + index;
     return pte;
 }
 
 PVOID pte2va (pte* pte) {
-    ULONG64 index = pte - pt;
+    ULONG64 index = pte - ptes;
     return (PVOID) (index * PAGE_SIZE + (ULONG_PTR) vaStart);
 }
 
@@ -526,7 +541,7 @@ full_virtual_memory_test (
     parameter.Type = MemExtendedParameterUserPhysicalHandle;
     parameter.Handle = physical_page_handle;
 
-    p = VirtualAlloc2 (NULL,
+    vaStart = VirtualAlloc2 (NULL,
                        NULL,
                        virtual_address_size,
                        MEM_RESERVE | MEM_PHYSICAL,
@@ -537,14 +552,14 @@ full_virtual_memory_test (
 
 #else
 
-    p = VirtualAlloc (NULL,
+    vaStart = VirtualAlloc (NULL,
                       virtual_address_size,
                       MEM_RESERVE | MEM_PHYSICAL,
                       PAGE_READWRITE);
 
 #endif
 
-    if (p == NULL) {
+    if (vaStart == NULL) {
 
         printf ("full_virtual_memory_test : could not reserve memory %x\n",
                 GetLastError ());
@@ -552,7 +567,9 @@ full_virtual_memory_test (
         return;
     }
 
-    pte* ptes = malloc(virtual_address_size / PAGE_SIZE * sizeof(pte));
+    ptes = malloc(virtual_address_size / PAGE_SIZE * sizeof(pte));
+
+    initializeListHeads();
 
     pfnStart = initialize(NUMBER_OF_PHYSICAL_PAGES * sizeof(pfn));
     pfn* endPFN = pfnStart + NUMBER_OF_PHYSICAL_PAGES;
@@ -605,7 +622,7 @@ full_virtual_memory_test (
 
         random_number &= ~0x7;
 
-        arbitrary_va = p + random_number;
+        arbitrary_va = vaStart + random_number;
 
         __try {
 
@@ -634,12 +651,12 @@ full_virtual_memory_test (
             // IT NEEDS TO BE REPLACED WITH A TRUE MEMORY MANAGEMENT
             // STATE MACHINE !
             //
+            pte* x = va2pte(arbitrary_va);
             pfn* transfer = linkRemove(FREE);
             ULONG_PTR frameNumber = transfer->pfn;
+            transfer->pte = x;
 
             linkAdd(transfer, ACTIVE);
-
-            pte* x = va2pte(arbitrary_va);
 
             boolean mapped = MapUserPhysicalPages(arbitrary_va, 1, &frameNumber);
 
@@ -741,7 +758,7 @@ main (
     // handle them under the covers invisibly to us.
     //
 
-    malloc_test ();
+    // malloc_test ();
 
     //
     // Test a slightly more complicated implementation - where we reserve
@@ -752,7 +769,7 @@ main (
     // fault !
     //
 
-    commit_at_fault_time_test ();
+    // commit_at_fault_time_test ();
 
     //
     // Test our very complicated usermode virtual implementation.
