@@ -19,8 +19,8 @@ ListHead->Flink = ListHead->Blink = ListHead;
 __checkReturn
         BOOLEAN
 FORCEINLINE
-IsListEmpty(
-        __in const LIST_ENTRY * ListHead
+isEmpty(
+        __in const LIST_ENTRY* ListHead
 )
 {
 return (BOOLEAN)(ListHead->Flink == ListHead);

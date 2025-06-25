@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
+#include "macros.h"
 
 //
 // This define enables code that lets us create multiple virtual address
@@ -53,7 +54,9 @@
 #define DISK_DIVISIONS             8
 
 // For 8 disk divisions, each division is 504
-#define DISK_DIVISION_SIZE         (VIRTUAL_ADDRESS_SIZE - PAGE_SIZE * NUMBER_OF_PHYSICAL_PAGES) / PAGE_SIZE / DISK_DIVISIONS;
+#define DISK_SIZE_IN_BYTES         (VIRTUAL_ADDRESS_SIZE - PAGE_SIZE * NUMBER_OF_PHYSICAL_PAGES + PAGE_SIZE)
+#define DISK_SIZE_IN_PAGES         (DISK_SIZE_IN_BYTES / PAGE_SIZE)
+#define DISK_DIVISION_SIZE_IN_PAGES (DISK_SIZE_IN_PAGES / DISK_DIVISIONS)
 
 BOOL
 GetPrivilege  (
@@ -329,8 +332,6 @@ commit_at_fault_time_test (
     return;
 }
 
-// WHY?? the valid and invalid bit
-
 typedef struct {
     ULONG64 valid: 1; // Will always be 1 because otherwise it'd be invalid
     ULONG64 pfn: FRAME_NUMBER_SIZE;
@@ -360,35 +361,6 @@ PVOID initialize(ULONG64 numBytes) {
     new = malloc(numBytes);
     memset(new, 0, numBytes);
     return new;
-}
-
-LIST_ENTRY headFreeList;
-LIST_ENTRY headActiveList;
-
-// LONG64 getMaxFrameNumber(VOID) {
-//     ULONG64 maxFrameNumber = 0;
-//
-//     for (int i = 0; i < NUMBER_OF_PHYSICAL_PAGES; ++i) {
-//         maxFrameNumber = max(maxFrameNumber, physical_page_numbers[i]);
-//     }
-//     return maxFrameNumber;
-// }
-
-pte* ptes;
-pfn* pfnStart;
-pfn* pfnEnd;
-PULONG_PTR vaStart;
-
-VOID initializeListHeads() {
-    headFreeList.Flink = &headFreeList;
-    headFreeList.Blink = &headFreeList;
-    headActiveList.Flink = &headActiveList;
-    headActiveList.Blink = &headActiveList;
-    // pfnStart = (pfn*)initialize(NUMBER_OF_PHYSICAL_PAGES * sizeof(pfn));
-    // ULONG64 max = getMaxFrameNumber();
-    // max+=1;
-    // pfnStart = VirtualAlloc(NULL,sizeof(pfn)*max,MEM_RESERVE,PAGE_READWRITE);
-    // pfnEnd = pfnStart + max;
 }
 
 VOID linkAdd(pfn* pfn, boolean active) {
@@ -438,6 +410,125 @@ PVOID pte2va (pte* pte) {
     ULONG64 index = pte - ptes;
     return (PVOID) (index * PAGE_SIZE + (ULONG_PTR) vaStart);
 }
+
+PVOID transferVa;
+PVOID disk;
+boolean* isFull;
+int diskIndex;
+
+VOID initializeDisk() {
+    disk = initialize(VIRTUAL_ADDRESS_SIZE - NUMBER_OF_PHYSICAL_PAGES * (PAGE_SIZE + 1));
+    isFull = initialize((VIRTUAL_ADDRESS_SIZE - NUMBER_OF_PHYSICAL_PAGES * (PAGE_SIZE + 1)) / PAGE_SIZE);
+    diskIndex = 1;
+}
+
+boolean writeToDisk(pfn* pfn) {
+    // Temporarily map the physical page to transferVA
+    if (!MapUserPhysicalPages(transferVa, 1, &pfn->pfn)) {
+        perror("MapUserPhysicalPages failed");
+        exit(1);
+    }
+
+    boolean full;
+
+    int count = diskIndex++;
+
+    while (count != diskIndex) {
+        if (diskIndex == ARRAYSIZE(isFull)) {
+            diskIndex = 1;
+        }
+        full = isFull[diskIndex];
+        diskIndex++;
+        if (!full) {
+            break;
+        }
+    }
+
+    if (diskIndex == ARRAYSIZE(isFull)) {
+        diskIndex = 1;
+    }
+
+    if (full) return FALSE;
+
+    PVOID diskAddress = (PVOID) ((ULONG64) disk + diskIndex * PAGE_SIZE);
+
+    // Copy from mapped page to malloced disk
+    memcpy(diskAddress, transferVa, PAGE_SIZE);
+
+    isFull[diskIndex] = TRUE;
+
+    // Unmap the transfer VA (optional)
+    MapUserPhysicalPages(transferVa, 1, NULL);
+
+    return TRUE;
+}
+
+boolean readFromDisk(ULONG64 diskIndex, pte* pte) {
+    // reverse write to disk
+    PVOID diskAddress = (PVOID) ((ULONG64) disk + diskIndex * PAGE_SIZE);
+
+    // Copy from mapped page to malloced disk
+    if (!memcpy(pte2va(pte), diskAddress, PAGE_SIZE)) return FALSE;
+
+    if (!memset(diskAddress, 0, PAGE_SIZE)) return FALSE;
+
+    isFull[diskIndex] = FALSE;
+
+    return TRUE;
+}
+
+LIST_ENTRY headFreeList;
+LIST_ENTRY headActiveList;
+
+// LONG64 getMaxFrameNumber(VOID) {
+//     ULONG64 maxFrameNumber = 0;
+//
+//     for (int i = 0; i < NUMBER_OF_PHYSICAL_PAGES; ++i) {
+//         maxFrameNumber = max(maxFrameNumber, physical_page_numbers[i]);
+//     }
+//     return maxFrameNumber;
+// }
+
+pte* ptes;
+pfn* pfnStart;
+pfn* pfnEnd;
+PULONG_PTR vaStart;
+
+VOID initializeListHeads() {
+    headFreeList.Flink = &headFreeList;
+    headFreeList.Blink = &headFreeList;
+    headActiveList.Flink = &headActiveList;
+    headActiveList.Blink = &headActiveList;
+    // pfnStart = (pfn*)initialize(NUMBER_OF_PHYSICAL_PAGES * sizeof(pfn));
+    // ULONG64 max = getMaxFrameNumber();
+    // max+=1;
+    // pfnStart = VirtualAlloc(NULL,sizeof(pfn)*max,MEM_RESERVE,PAGE_READWRITE);
+    // pfnEnd = pfnStart + max;
+}
+
+void pageTrimmer() {
+    // Remove a page from the active list
+    pfn* page = linkRemove(ACTIVE);
+
+    // Unmap (destroy) the page's virtual memory
+    ULONG64 va = pte2va(page->pte);
+    // ADD ERROR CHECK
+    MapUserPhysicalPages(va, 1, NULL);
+
+    if (writeToDisk(page)) {
+        page->pte->invalid.invalid = 0;
+        page->pte->invalid.diskIndex = diskIndex;
+    }
+
+    // Put the page on the free list
+    linkAdd(page, FREE);
+
+    page->pte->full = 0;
+
+    return;
+}
+
+
 
 VOID
 full_virtual_memory_test (
@@ -569,6 +660,8 @@ full_virtual_memory_test (
 
     ptes = malloc(virtual_address_size / PAGE_SIZE * sizeof(pte));
 
+    transferVa = malloc(PAGE_SIZE);
+
     initializeListHeads();
 
     pfnStart = initialize(NUMBER_OF_PHYSICAL_PAGES * sizeof(pfn));
@@ -635,11 +728,8 @@ full_virtual_memory_test (
 
         if (page_faulted) {
 
-            if (headFreeList.Flink == &headFreeList) {
-                // WHY?? ask about invalid bit and simple aging for now -> when we take it from someone
-                // STart by trimming any page
-                // maybe: int leftmost = (headActiveList.Flink.entry // or headActiveList.Flink >> 63) & 1;
-                // i might need to add new bit
+            if (isEmpty(&headFreeList)) {
+                pageTrimmer();
             }
 
             //
@@ -656,6 +746,12 @@ full_virtual_memory_test (
             ULONG_PTR frameNumber = transfer->pfn;
             transfer->pte = x;
 
+            if (x->invalid.diskIndex != 0) {
+                if (!readFromDisk(x->invalid.diskIndex, x)) {
+                    printf("problem reading from disk");
+                }
+            }
+
             linkAdd(transfer, ACTIVE);
 
             boolean mapped = MapUserPhysicalPages(arbitrary_va, 1, &frameNumber);
@@ -669,6 +765,7 @@ full_virtual_memory_test (
 
             x->valid.valid = 1;
             x->valid.pfn = frameNumber;
+            x->valid.pfn->entry
 
             //
             // No exception handler needed now since we have connected
@@ -708,7 +805,6 @@ full_virtual_memory_test (
     return;
 }
 
-PVOID transferVa;
 // This is a ULONG that's the same size as a pointer, but WHY??
 // is it because you don't need that much space?
 ULONG_PTR ppCount;
