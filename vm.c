@@ -363,6 +363,9 @@ PVOID initialize(ULONG64 numBytes) {
     return new;
 }
 
+LIST_ENTRY headFreeList;
+LIST_ENTRY headActiveList;
+
 VOID linkAdd(pfn* pfn, boolean active) {
     LIST_ENTRY* head;
     if (active) {
@@ -400,6 +403,11 @@ pfn* linkRemove(boolean active) {
 
 }
 
+pte* ptes;
+pfn* pfnStart;
+pfn* pfnEnd;
+PULONG_PTR vaStart;
+
 pte* va2pte(PVOID va) {
     ULONG64 index = ((ULONG_PTR)va - (ULONG_PTR) vaStart) / PAGE_SIZE;
     pte* pte = ptes + index;
@@ -417,14 +425,16 @@ boolean* isFull;
 int diskIndex;
 
 VOID initializeDisk() {
-    disk = initialize(VIRTUAL_ADDRESS_SIZE - NUMBER_OF_PHYSICAL_PAGES * (PAGE_SIZE + 1));
-    isFull = initialize((VIRTUAL_ADDRESS_SIZE - NUMBER_OF_PHYSICAL_PAGES * (PAGE_SIZE + 1)) / PAGE_SIZE);
+    ULONG64 numBytes = VIRTUAL_ADDRESS_SIZE - NUMBER_OF_PHYSICAL_PAGES * (PAGE_SIZE + 1);
+    disk = initialize(numBytes);
+    isFull = initialize(numBytes / PAGE_SIZE);
     diskIndex = 1;
 }
 
 boolean writeToDisk(pfn* pfn) {
     // Temporarily map the physical page to transferVA
     if (!MapUserPhysicalPages(transferVa, 1, &pfn->pfn)) {
+        DebugBreak();
         perror("MapUserPhysicalPages failed");
         exit(1);
     }
@@ -438,10 +448,10 @@ boolean writeToDisk(pfn* pfn) {
             diskIndex = 1;
         }
         full = isFull[diskIndex];
-        diskIndex++;
         if (!full) {
             break;
         }
+        diskIndex++;
     }
 
     if (diskIndex == ARRAYSIZE(isFull)) {
@@ -463,22 +473,27 @@ boolean writeToDisk(pfn* pfn) {
     return TRUE;
 }
 
-boolean readFromDisk(ULONG64 diskIndex, pte* pte) {
+boolean readFromDisk(ULONG64 diskIndex, ULONG64 frameNumber) {
     // reverse write to disk
     PVOID diskAddress = (PVOID) ((ULONG64) disk + diskIndex * PAGE_SIZE);
 
-    // Copy from mapped page to malloced disk
-    if (!memcpy(pte2va(pte), diskAddress, PAGE_SIZE)) return FALSE;
+    if (!MapUserPhysicalPages(transferVa, 1, &frameNumber)) {
+        DebugBreak();
+        perror("MapUserPhysicalPages failed");
+        exit(1);
+    }
 
-    if (!memset(diskAddress, 0, PAGE_SIZE)) return FALSE;
+    // Copy from mapped page to malloced disk
+    if (!memcpy(transferVa, diskAddress, PAGE_SIZE)) return FALSE;
+
+    memset(diskAddress, 0, PAGE_SIZE);
+
+    MapUserPhysicalPages(transferVa, 1, NULL);
 
     isFull[diskIndex] = FALSE;
 
     return TRUE;
 }
-
-LIST_ENTRY headFreeList;
-LIST_ENTRY headActiveList;
 
 // LONG64 getMaxFrameNumber(VOID) {
 //     ULONG64 maxFrameNumber = 0;
@@ -488,11 +503,6 @@ LIST_ENTRY headActiveList;
 //     }
 //     return maxFrameNumber;
 // }
-
-pte* ptes;
-pfn* pfnStart;
-pfn* pfnEnd;
-PULONG_PTR vaStart;
 
 VOID initializeListHeads() {
     headFreeList.Flink = &headFreeList;
@@ -511,7 +521,7 @@ void pageTrimmer() {
     pfn* page = linkRemove(ACTIVE);
 
     // Unmap (destroy) the page's virtual memory
-    ULONG64 va = pte2va(page->pte);
+    PVOID va = pte2va(page->pte);
     // ADD ERROR CHECK
     MapUserPhysicalPages(va, 1, NULL);
 
@@ -581,7 +591,8 @@ full_virtual_memory_test (
 
     physical_page_count = NUMBER_OF_PHYSICAL_PAGES;
 
-    physical_page_numbers = malloc (physical_page_count * sizeof (ULONG_PTR));
+    physical_page_numbers = malloc(physical_page_count * sizeof (ULONG_PTR));
+    memset(physical_page_numbers, 0, physical_page_count * sizeof (ULONG_PTR));
 
     if (physical_page_numbers == NULL) {
         printf ("full_virtual_memory_test : could not allocate array to hold physical page numbers\n");
@@ -599,7 +610,7 @@ full_virtual_memory_test (
 
     if (physical_page_count != NUMBER_OF_PHYSICAL_PAGES) {
 
-        printf ("full_virtual_memory_test : allocated only %lu pages out of %u pages requested\n",
+        printf ("full_virtual_memory_test : allocated only %llu pages out of %u pages requested\n",
                 physical_page_count,
                 NUMBER_OF_PHYSICAL_PAGES);
     }
@@ -658,11 +669,19 @@ full_virtual_memory_test (
         return;
     }
 
-    ptes = malloc(virtual_address_size / PAGE_SIZE * sizeof(pte));
+    ULONG64 numBytes = virtual_address_size / PAGE_SIZE * sizeof(pte);
 
-    transferVa = malloc(PAGE_SIZE);
+    ptes = initialize(numBytes);
+
+    transferVa = VirtualAlloc (NULL,
+                      virtual_address_size,
+                      MEM_RESERVE | MEM_PHYSICAL,
+                      PAGE_READWRITE);
+
 
     initializeListHeads();
+
+    initializeDisk();
 
     pfnStart = initialize(NUMBER_OF_PHYSICAL_PAGES * sizeof(pfn));
     pfn* endPFN = pfnStart + NUMBER_OF_PHYSICAL_PAGES;
@@ -747,7 +766,7 @@ full_virtual_memory_test (
             transfer->pte = x;
 
             if (x->invalid.diskIndex != 0) {
-                if (!readFromDisk(x->invalid.diskIndex, x)) {
+                if (!readFromDisk(x->invalid.diskIndex, frameNumber)) {
                     printf("problem reading from disk");
                 }
             }
@@ -758,14 +777,13 @@ full_virtual_memory_test (
 
             if (mapped == FALSE) {
 
-                printf ("full_virtual_memory_test : could not map VA %p to page %lX\n", arbitrary_va, *physical_page_numbers);
+                printf ("full_virtual_memory_test : could not map VA %p to page %llX\n", arbitrary_va, *physical_page_numbers);
 
                 return;
             }
 
             x->valid.valid = 1;
             x->valid.pfn = frameNumber;
-            x->valid.pfn->entry
 
             //
             // No exception handler needed now since we have connected
@@ -800,7 +818,7 @@ full_virtual_memory_test (
     // citizen and free it.
     //
 
-    VirtualFree (p, 0, MEM_RELEASE);
+    VirtualFree (vaStart, 0, MEM_RELEASE);
 
     return;
 }
