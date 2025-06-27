@@ -431,7 +431,8 @@ VOID initializeDisk() {
     diskIndex = 1;
 }
 
-boolean writeToDisk(pfn* pfn) {
+// Also need to modify writeToDisk to return the actual disk index used
+boolean writeToDisk(pfn* pfn, int* usedDiskIndex) {
     // Temporarily map the physical page to transferVA
     if (!MapUserPhysicalPages(transferVa, 1, &pfn->pfn)) {
         DebugBreak();
@@ -439,26 +440,33 @@ boolean writeToDisk(pfn* pfn) {
         exit(1);
     }
 
-    boolean full;
+    boolean full = TRUE;
+    int startIndex = diskIndex;
+    int currentIndex = ++diskIndex;
 
-    int count = diskIndex++;
-
-    while (count != diskIndex) {
-        if (diskIndex == ARRAYSIZE(isFull)) {
-            diskIndex = 1;
+    // Look for a free slot - search through all slots once
+    do {
+        // Wrap around logic
+        if (currentIndex >= ARRAYSIZE(isFull)) {
+            currentIndex = 1;  // Reset to 1, not 0
         }
-        full = isFull[diskIndex];
+
+        full = isFull[currentIndex];
         if (!full) {
+            diskIndex = currentIndex;  // Update global diskIndex
             break;
         }
-        diskIndex++;
-    }
 
-    if (diskIndex == ARRAYSIZE(isFull)) {
-        diskIndex = 1;
-    }
+        currentIndex++;
 
-    if (full) return FALSE;
+    } while (currentIndex != startIndex);  // Stop when we've made a full circle
+
+    // If we've checked all slots and they're all full, return FALSE
+    if (full) {
+        MapUserPhysicalPages(transferVa, 1, NULL);
+        *usedDiskIndex = 0;  // Indicate failure
+        return FALSE;
+    }
 
     PVOID diskAddress = (PVOID) ((ULONG64) disk + diskIndex * PAGE_SIZE);
 
@@ -466,8 +474,15 @@ boolean writeToDisk(pfn* pfn) {
     memcpy(diskAddress, transferVa, PAGE_SIZE);
 
     isFull[diskIndex] = TRUE;
+    *usedDiskIndex = diskIndex;  // Return the actual index used
 
-    // Unmap the transfer VA (optional)
+    // Move to next index for next time
+    diskIndex++;
+    if (diskIndex >= ARRAYSIZE(isFull)) {
+        diskIndex = 1;
+    }
+
+    // Unmap the transfer VA
     MapUserPhysicalPages(transferVa, 1, NULL);
 
     return TRUE;
@@ -515,25 +530,26 @@ VOID initializeListHeads() {
     // pfnStart = VirtualAlloc(NULL,sizeof(pfn)*max,MEM_RESERVE,PAGE_READWRITE);
     // pfnEnd = pfnStart + max;
 }
-
 void pageTrimmer() {
     // Remove a page from the active list
     pfn* page = linkRemove(ACTIVE);
 
     // Unmap (destroy) the page's virtual memory
     PVOID va = pte2va(page->pte);
-    // ADD ERROR CHECK
     MapUserPhysicalPages(va, 1, NULL);
 
-    if (writeToDisk(page)) {
+    int actualDiskIndex;
+    if (writeToDisk(page, &actualDiskIndex)) {
+        // Set up the invalid PTE with the correct disk index
         page->pte->invalid.invalid = 0;
-        page->pte->invalid.diskIndex = diskIndex;
+        page->pte->invalid.diskIndex = actualDiskIndex;
+    } else {
+        // Disk is full - just mark as invalid with no backing store
+        page->pte->full = 0;  // Zero the entire PTE
     }
 
     // Put the page on the free list
     linkAdd(page, FREE);
-
-    page->pte->full = 0;
 
     return;
 }
