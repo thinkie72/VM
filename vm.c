@@ -420,19 +420,20 @@ PVOID pte2va (pte* pte) {
 }
 
 PVOID transferVa;
+ULONG64 diskBytes;
 PVOID disk;
 boolean* isFull;
-int diskIndex;
+ULONG64 diskIndex;
 
 VOID initializeDisk() {
-    ULONG64 numBytes = VIRTUAL_ADDRESS_SIZE - NUMBER_OF_PHYSICAL_PAGES * (PAGE_SIZE + 1);
-    disk = initialize(numBytes);
-    isFull = initialize(numBytes / PAGE_SIZE);
+    diskBytes = VIRTUAL_ADDRESS_SIZE - (NUMBER_OF_PHYSICAL_PAGES + 1) * PAGE_SIZE;
+    disk = initialize(diskBytes);
+    isFull = initialize(diskBytes / PAGE_SIZE);
     diskIndex = 1;
 }
 
 // Also need to modify writeToDisk to return the actual disk index used
-boolean writeToDisk(pfn* pfn, int* usedDiskIndex) {
+boolean writeToDisk(pfn* pfn, ULONG64* usedDiskIndex) {
     // Temporarily map the physical page to transferVA
     if (!MapUserPhysicalPages(transferVa, 1, &pfn->pfn)) {
         DebugBreak();
@@ -441,13 +442,13 @@ boolean writeToDisk(pfn* pfn, int* usedDiskIndex) {
     }
 
     boolean full = TRUE;
-    int startIndex = diskIndex;
-    int currentIndex = ++diskIndex;
+    ULONG64 startIndex = diskIndex;
+    ULONG64 currentIndex = ++diskIndex;
 
     // Look for a free slot - search through all slots once
     do {
         // Wrap around logic
-        if (currentIndex >= ARRAYSIZE(isFull)) {
+        if (currentIndex >= diskBytes / PAGE_SIZE) {
             currentIndex = 1;  // Reset to 1, not 0
         }
 
@@ -477,8 +478,9 @@ boolean writeToDisk(pfn* pfn, int* usedDiskIndex) {
     *usedDiskIndex = diskIndex;  // Return the actual index used
 
     // Move to next index for next time
+    // WHY?? do i really need this
     diskIndex++;
-    if (diskIndex >= ARRAYSIZE(isFull)) {
+    if (diskIndex >= diskBytes / PAGE_SIZE) {
         diskIndex = 1;
     }
 
@@ -538,7 +540,7 @@ void pageTrimmer() {
     PVOID va = pte2va(page->pte);
     MapUserPhysicalPages(va, 1, NULL);
 
-    int actualDiskIndex;
+    ULONG64 actualDiskIndex;
     if (writeToDisk(page, &actualDiskIndex)) {
         // Set up the invalid PTE with the correct disk index
         page->pte->invalid.invalid = 0;
@@ -554,7 +556,46 @@ void pageTrimmer() {
     return;
 }
 
+VOID pageFaultHandler(PVOID arbitrary_va) {
 
+    if (isEmpty(&headFreeList)) {
+        pageTrimmer();
+    }
+
+    //
+    // Connect the virtual address now - if that succeeds then
+    // we'll be able to access it from now on.
+    //
+    // THIS IS JUST REUSING THE SAME PHYSICAL PAGE OVER AND OVER !
+    //
+    // IT NEEDS TO BE REPLACED WITH A TRUE MEMORY MANAGEMENT
+    // STATE MACHINE !
+    //
+    pte* x = va2pte(arbitrary_va);
+    pfn* transfer = linkRemove(FREE);
+    ULONG_PTR frameNumber = transfer->pfn;
+    transfer->pte = x;
+
+    if (x->invalid.diskIndex != 0) {
+        if (!readFromDisk(x->invalid.diskIndex, frameNumber)) {
+            printf("problem reading from disk");
+        }
+    }
+
+    linkAdd(transfer, ACTIVE);
+
+    boolean mapped = MapUserPhysicalPages(arbitrary_va, 1, &frameNumber);
+
+    if (mapped == FALSE) {
+
+        printf ("full_virtual_memory_test : could not map VA %p to page %I64x \n", arbitrary_va, frameNumber);
+
+        return;
+    }
+
+    x->valid.valid = 1;
+    x->valid.pfn = frameNumber;
+}
 
 VOID
 full_virtual_memory_test (
@@ -762,44 +803,7 @@ full_virtual_memory_test (
         }
 
         if (page_faulted) {
-
-            if (isEmpty(&headFreeList)) {
-                pageTrimmer();
-            }
-
-            //
-            // Connect the virtual address now - if that succeeds then
-            // we'll be able to access it from now on.
-            //
-            // THIS IS JUST REUSING THE SAME PHYSICAL PAGE OVER AND OVER !
-            //
-            // IT NEEDS TO BE REPLACED WITH A TRUE MEMORY MANAGEMENT
-            // STATE MACHINE !
-            //
-            pte* x = va2pte(arbitrary_va);
-            pfn* transfer = linkRemove(FREE);
-            ULONG_PTR frameNumber = transfer->pfn;
-            transfer->pte = x;
-
-            if (x->invalid.diskIndex != 0) {
-                if (!readFromDisk(x->invalid.diskIndex, frameNumber)) {
-                    printf("problem reading from disk");
-                }
-            }
-
-            linkAdd(transfer, ACTIVE);
-
-            boolean mapped = MapUserPhysicalPages(arbitrary_va, 1, &frameNumber);
-
-            if (mapped == FALSE) {
-
-                printf ("full_virtual_memory_test : could not map VA %p to page %llX\n", arbitrary_va, *physical_page_numbers);
-
-                return;
-            }
-
-            x->valid.valid = 1;
-            x->valid.pfn = frameNumber;
+            pageFaultHandler(arbitrary_va);
 
             //
             // No exception handler needed now since we have connected
