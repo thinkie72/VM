@@ -4,4 +4,5 @@ project(VM C)
 set(CMAKE_C_STANDARD 11)
 
 add_executable(VM vm.c
-        macros.h)
+        macros.h
+        util.h)
