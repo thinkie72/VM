@@ -343,6 +343,7 @@ commit_at_fault_time_test (
 // WHY?? if no need for frame Number than how should i edit my PTE formats?
 typedef struct {
     ULONG64 valid: 1; // Will always be 1 because otherwise it'd be invalid
+    ULONG64 zero: 1;
     ULONG64 frameNumber: FRAME_NUMBER_SIZE;
 } validPTE;
 
@@ -434,7 +435,7 @@ pfn* frameNumber2pfn (ULONG64 frameNumber) {
 }
 
 ULONG64 pfn2frameNumber (pfn* p) {
-    return p - pfnStart;
+    return (ULONG64) (p - pfnStart);
 }
 
 PVOID transferVa;
@@ -498,8 +499,6 @@ VOID writeToDisk() {
 
     int i;
 
-    printf("=== writeToDisk() start ===\n");
-
     for (i = 0; i < BATCH_SIZE; i++) {
         if (isEmpty(&headModifiedList)) break;
 
@@ -513,62 +512,39 @@ VOID writeToDisk() {
         frameNumbers[i] = pfn2frameNumber(pages[i]);
         virtualAddresses[i] = (PVOID)((ULONG64)transferVa + i * PAGE_SIZE);
         pages[i]->diskIndex = diskIndex;
-
-        printf("Page %d: frameNumber=%llu, diskIndex=%llu, diskAddr=%p\n",
-               i, frameNumbers[i], diskIndex, (PVOID)diskAddresses[i]);
     }
 
-    printf("About to map %d pages to transferVa=%p\n", i, transferVa);
-
     if (i != 0) {
-        BOOL result = MapUserPhysicalPagesScatter(virtualAddresses, i, frameNumbers);
-        if (!result) {
-            printf("MapUserPhysicalPagesScatter FAILED! Error: %d\n", GetLastError());
-            return;
-        }
-        printf("MapUserPhysicalPagesScatter succeeded\n");
+        ASSERT(MapUserPhysicalPagesScatter(virtualAddresses, i, frameNumbers));
     }
 
     for (int j = 0; j < i; j++) {
         PVOID sourceAddr = (PVOID)((ULONG64)transferVa + j * PAGE_SIZE);
         PVOID destAddr = (PVOID)diskAddresses[j];
 
-        printf("About to copy: source=%p, dest=%p, size=%d\n",
-               sourceAddr, destAddr, PAGE_SIZE);
-
         // Check if addresses look reasonable
-        if (sourceAddr == NULL || destAddr == NULL) {
-            printf("ERROR: NULL address detected!\n");
-            DebugBreak();
-            continue;
-        }
+        ASSERT(sourceAddr == NULL || destAddr == NULL);
 
-        memcpy(destAddr, sourceAddr, PAGE_SIZE);  // This is where it crashes
-        printf("Copy completed for page %d\n", j);
+        ASSERT(memcpy(destAddr, sourceAddr, PAGE_SIZE));
 
         pages[j]->MODIFIED_OR_STANDBY = STANDBY;
         linkAdd(pages[j], &headStandbyList);
     }
 
     // Unmap the transfer VA
-    MapUserPhysicalPages(transferVa, i, NULL);
-    printf("=== writeToDisk() end ===\n");
+    ASSERT(MapUserPhysicalPages(transferVa, i, NULL));
 }
 
 void readFromDisk(ULONG64 diskIndex, ULONG64 frameNumber) {
     // reverse write to disk
     PVOID diskAddress = (PVOID) ((ULONG64) disk + diskIndex * PAGE_SIZE);
 
-    if (!MapUserPhysicalPages(transferVa, 1, &frameNumber)) {
-        DebugBreak();
-        perror("MapUserPhysicalPages failed");
-        exit(1);
-    }
+    ASSERT(MapUserPhysicalPages(transferVa, 1, &frameNumber));
 
     // Copy from mapped page to malloced disk
     ASSERT(memcpy(transferVa, diskAddress, PAGE_SIZE));
 
-    MapUserPhysicalPages(transferVa, 1, NULL);
+    ASSERT(MapUserPhysicalPages(transferVa, 1, NULL));
 
     isFull[diskIndex] = FALSE;
 }
@@ -589,19 +565,23 @@ VOID commitSparseArray(PULONG_PTR pages) {
 
 
     for (int i = 0; i < NUMBER_OF_PHYSICAL_PAGES; i++) {
-        ULONG64 address = (ULONG64) (pfnStart + pages[i]);
+        pfn* newpfn = (pfn*) (pfnStart + pages[i]);
+        // newpfn for address
         if (PAGE_SIZE % sizeof(pfn) != 0) {
-            ULONG64 x = address / PAGE_SIZE;
-            ULONG64 y = (address + sizeof(pfn)) / PAGE_SIZE;
+            ULONG64 x = (ULONG64) newpfn / PAGE_SIZE;
+            ULONG64 y = ((ULONG64) newpfn + sizeof(pfn)) / PAGE_SIZE;
             if (x != y) {
-                address &= ~(PAGE_SIZE - 1);
-                VirtualAlloc((PVOID) address,sizeof(pfn),MEM_COMMIT,PAGE_READWRITE);
-                VirtualAlloc((PVOID) ((PULONG_PTR) address + PAGE_SIZE),sizeof(pfn),MEM_COMMIT,PAGE_READWRITE);
+                VirtualAlloc((PVOID) newpfn,sizeof(pfn),MEM_COMMIT,PAGE_READWRITE);
+                VirtualAlloc((PVOID) ((ULONG64) newpfn + PAGE_SIZE),sizeof(pfn),MEM_COMMIT,PAGE_READWRITE);
             }
         }
         else {
-            PVOID z = VirtualAlloc((PVOID) address,sizeof(pfn),MEM_COMMIT,PAGE_READWRITE);
+            PVOID z = VirtualAlloc((PVOID) newpfn,sizeof(pfn),MEM_COMMIT,PAGE_READWRITE);
             ASSERT(z);
+            ULONG64 frameNumberCheck = pfn2frameNumber(newpfn);
+            ASSERT(frameNumberCheck == pages[i]);
+            pfn* pfnCheck = frameNumber2pfn(pages[i]);
+            ASSERT(pfnCheck == newpfn);
         }
     }
 }
@@ -631,7 +611,7 @@ VOID pageTrimmer() {
     }
 
     if (i != 0) {
-        MapUserPhysicalPagesScatter(batch, i, NULL);
+        ASSERT(MapUserPhysicalPagesScatter(batch, i, NULL));
     }
 
     for (int j = 0; j < i; j++) {
@@ -643,7 +623,7 @@ VOID pageTrimmer() {
 
 void MAS(pfn* page, pte* new) {
     ULONG64 frameNumber = pfn2frameNumber(page);
-    MapUserPhysicalPages(pte2va(new), 1, &frameNumber);
+    ASSERT(MapUserPhysicalPages(pte2va(new), 1, &frameNumber));
     linkAdd(page, &headActiveList);
     page->pte = new;
     new->valid.valid = VALID;
@@ -657,7 +637,7 @@ pfn* standbyFree() {
     page->pte->disk.diskIndex = page->diskIndex;
 
     ULONG64 frameNumber = pfn2frameNumber(page);
-    MapUserPhysicalPages(transferVa, 1, &frameNumber);
+    ASSERT(MapUserPhysicalPages(transferVa, 1, &frameNumber));
 
     // Zero the page content, not the PFN structure
     memset(transferVa, 0, PAGE_SIZE);  // Use transferVa, which points to the mapped page
@@ -688,7 +668,6 @@ VOID pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages) {
 
         // Add NULL check here
         if (page == NULL) {
-            printf("ERROR: frameNumber2pfn returned NULL!\n");
             DebugBreak();
             return;
         }
@@ -696,13 +675,10 @@ VOID pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages) {
         // Add bounds check for the PFN pointer
         if ((ULONG64)page < (ULONG64)pfnStart ||
             (ULONG64)page >= (ULONG64)pfnStart + (getMaxFrameNumber(pages) + 1) * sizeof(pfn)) {
-            printf("ERROR: PFN pointer %p is out of bounds! pfnStart=%p\n", page, pfnStart);
             DebugBreak();
             return;
             }
 
-        printf("PFN %p: frameNumber=%llu, MODIFIED_OR_STANDBY=%llu, diskIndex=%llu\n",
-               page, x->transition.frameNumber, page->MODIFIED_OR_STANDBY, page->diskIndex);
 
         if (page->MODIFIED_OR_STANDBY == STANDBY) {
             isFull[page->diskIndex] = FALSE;
