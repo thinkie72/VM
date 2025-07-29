@@ -475,7 +475,7 @@ ULONG64 findFreeDiskSlot() {
 
     // If we've checked all slots and they're all full, return FALSE
     if (full) {
-        MapUserPhysicalPages(transferVa, 1, NULL);
+        ASSERT(MapUserPhysicalPages(transferVa, 1, NULL));
         return 0;
     }
 
@@ -523,7 +523,7 @@ VOID writeToDisk() {
         PVOID destAddr = (PVOID)diskAddresses[j];
 
         // Check if addresses look reasonable
-        ASSERT(sourceAddr == NULL || destAddr == NULL);
+        ASSERT(sourceAddr != NULL && destAddr != NULL);
 
         ASSERT(memcpy(destAddr, sourceAddr, PAGE_SIZE));
 
@@ -531,8 +531,10 @@ VOID writeToDisk() {
         linkAdd(pages[j], &headStandbyList);
     }
 
-    // Unmap the transfer VA
-    ASSERT(MapUserPhysicalPages(transferVa, i, NULL));
+    // Unmap the pages
+    for (int k = 0; k < i; k++) {
+        ASSERT(MapUserPhysicalPages(virtualAddresses[k], 1, NULL));
+    }
 }
 
 void readFromDisk(ULONG64 diskIndex, ULONG64 frameNumber) {
@@ -642,7 +644,7 @@ pfn* standbyFree() {
     // Zero the page content, not the PFN structure
     memset(transferVa, 0, PAGE_SIZE);  // Use transferVa, which points to the mapped page
 
-    MapUserPhysicalPages(transferVa, 1, NULL);
+    ASSERT(MapUserPhysicalPages(transferVa, 1, NULL));
     return page;
 }
 
