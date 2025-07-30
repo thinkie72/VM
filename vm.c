@@ -57,8 +57,10 @@
 
 #define BATCH_SIZE                  10
 
-#define MODIFIED                    0
-#define STANDBY                     1
+#define FREE                        1
+#define ACTIVE                      2
+#define MODIFIED                    3
+#define STANDBY                     4
 
 #define TRANSITION                  1
 #define DISK                        0
@@ -340,7 +342,6 @@ commit_at_fault_time_test (
     return;
 }
 
-// WHY?? if no need for frame Number than how should i edit my PTE formats?
 typedef struct {
     ULONG64 valid: 1; // Will always be 1 because otherwise it'd be invalid
     ULONG64 zero: 1;
@@ -372,7 +373,7 @@ typedef struct {
     LIST_ENTRY entry;
     pte* pte;
     ULONG64 diskIndex: FRAME_NUMBER_SIZE;
-    ULONG64 MODIFIED_OR_STANDBY: 1; // Modified is 0; Standby is 1
+    ULONG64 status: 3; // Modified is 0; Standby is 1
 } pfn;
 
 PVOID initialize(ULONG64 numBytes) {
@@ -382,10 +383,15 @@ PVOID initialize(ULONG64 numBytes) {
     return new;
 }
 
+// WHY?? do i need to worry about locks when initializing?
+
 LIST_ENTRY headFreeList;
-LIST_ENTRY headActiveList;
 LIST_ENTRY headModifiedList;
 LIST_ENTRY headStandbyList;
+
+CRITICAL_SECTION lockFreeList;
+CRITICAL_SECTION lockModifiedList;
+CRITICAL_SECTION lockStandbyList;
 
 VOID linkAdd(pfn* pfn, LIST_ENTRY* head) {
     pfn->entry.Flink = head;
@@ -437,6 +443,8 @@ pfn* frameNumber2pfn (ULONG64 frameNumber) {
 ULONG64 pfn2frameNumber (pfn* p) {
     return (ULONG64) (p - pfnStart);
 }
+
+// TODO: add more transferVa's
 
 PVOID transferVa;
 ULONG64 diskBytes;
@@ -494,11 +502,12 @@ ULONG64 findFreeDiskSlot() {
 VOID writeToDisk() {
     pfn* pages[BATCH_SIZE];
     ULONG_PTR frameNumbers[BATCH_SIZE];
-    PVOID virtualAddresses[BATCH_SIZE];
     ULONG64 diskAddresses[BATCH_SIZE];
 
     int i;
-
+    // TODO: lock modified list
+    EnterCriticalSection(&lockModifiedList);
+    // TODO: lock page somehow (maybe like an in-progress field) later but just page table for now
     for (i = 0; i < BATCH_SIZE; i++) {
         if (isEmpty(&headModifiedList)) break;
 
@@ -510,14 +519,21 @@ VOID writeToDisk() {
         diskAddresses[i] = (ULONG64) disk + diskIndex * PAGE_SIZE;
         pages[i] = linkRemoveHead(&headModifiedList);
         frameNumbers[i] = pfn2frameNumber(pages[i]);
-        virtualAddresses[i] = (PVOID)((ULONG64)transferVa + i * PAGE_SIZE);
         pages[i]->diskIndex = diskIndex;
     }
+    LeaveCriticalSection(&lockModifiedList);
+
+    // WHY?? for now we can maybe hold onto this list lock for the modified list
+    // for longer to avoid writing out inaccurate info to disk
+
+    // TODO: free modified list lock
 
     if (i != 0) {
-        ASSERT(MapUserPhysicalPagesScatter(virtualAddresses, i, frameNumbers));
+        ASSERT(MapUserPhysicalPages(transferVa, i, frameNumbers));
     }
 
+
+    EnterCriticalSection(&lockStandbyList);
     for (int j = 0; j < i; j++) {
         PVOID sourceAddr = (PVOID)((ULONG64)transferVa + j * PAGE_SIZE);
         PVOID destAddr = (PVOID)diskAddresses[j];
@@ -527,14 +543,16 @@ VOID writeToDisk() {
 
         ASSERT(memcpy(destAddr, sourceAddr, PAGE_SIZE));
 
-        pages[j]->MODIFIED_OR_STANDBY = STANDBY;
+        // something here for rescue before write or between steps
+        pages[j]->status = STANDBY;
         linkAdd(pages[j], &headStandbyList);
     }
+    LeaveCriticalSection(&lockStandbyList);
+
+    // TODO: release standby lock
 
     // Unmap the pages
-    for (int k = 0; k < i; k++) {
-        ASSERT(MapUserPhysicalPages(virtualAddresses[k], 1, NULL));
-    }
+    ASSERT(MapUserPhysicalPages(transferVa, i, NULL));
 }
 
 void readFromDisk(ULONG64 diskIndex, ULONG64 frameNumber) {
@@ -588,46 +606,83 @@ VOID commitSparseArray(PULONG_PTR pages) {
     }
 }
 
-VOID initializeListHeads(PULONG_PTR pages) {
+VOID initializeListHeads() {
     headFreeList.Flink = &headFreeList;
     headFreeList.Blink = &headFreeList;
-    headActiveList.Flink = &headActiveList;
-    headActiveList.Blink = &headActiveList;
     headModifiedList.Flink = &headModifiedList;
     headModifiedList.Blink = &headModifiedList;
     headStandbyList.Flink = &headStandbyList;
     headStandbyList.Blink = &headStandbyList;
 }
 
+VOID initializeListLocks() {
+    InitializeCriticalSection(&lockFreeList);
+    InitializeCriticalSection(&lockModifiedList);
+    InitializeCriticalSection(&lockStandbyList);
+}
+
 VOID pageTrimmer() {
     pfn* pages[BATCH_SIZE];
     PVOID batch[BATCH_SIZE];
 
-    int i;
+    int i = 0;
+    static ULONG64 scanIndex = 0;  // Remember where we left off
+    ULONG64 pagesScanned = 0;
+    ULONG64 totalPages = VIRTUAL_ADDRESS_SIZE / PAGE_SIZE;
 
-    for (i = 0; i < 10; i++) {
-        if (isEmpty(&headActiveList)) break;
-        // grab a page from the active list and move to modified
-        pages[i] = linkRemoveHead(&headActiveList);
-        batch[i] = pte2va(pages[i]->pte);
+    // TODO: page table lock
+    // WHY?? is there a different way to initialize and use the page table lock
+    // when else do i need it, like every time I'm looking at a page or only when I'm changing PTE's or neither case
+
+    // Scan from where we left off last time
+    while (i < BATCH_SIZE && pagesScanned < totalPages) {
+        pte* currentPte = &ptes[scanIndex];
+
+        // Only process valid pages that are mapped to physical memory
+        if (currentPte->valid.valid == VALID) {
+            pfn* page = frameNumber2pfn(currentPte->valid.frameNumber);
+
+            // Check if this page is active and can be trimmed
+            if (page->status == ACTIVE) {
+                pages[i] = page;
+                batch[i] = pte2va(currentPte);
+                i++;
+
+                // Remove from active list since we found it via page table
+                linkRemovePFN(page);
+            }
+        }
+
+        // Move to next page, wrap around if needed
+        scanIndex = (scanIndex + 1) % totalPages;
+        pagesScanned++;
     }
 
     if (i != 0) {
         ASSERT(MapUserPhysicalPagesScatter(batch, i, NULL));
     }
 
+    EnterCriticalSection(&lockModifiedList);
     for (int j = 0; j < i; j++) {
         pages[j]->pte->transition.invalid = INVALID;
         pages[j]->pte->transition.transition = TRANSITION;
+        pages[j]->status = MODIFIED;
         linkAdd(pages[j], &headModifiedList);
     }
+    LeaveCriticalSection(&lockModifiedList);
+    // TODO: free page table lock
 }
 
-void MAS(pfn* page, pte* new) {
+/* TODO: in one user thread, we need:
+ * list lock for every list
+ * page table lock
+ */
+
+void mapandset(pfn* page, pte* new) {
     ULONG64 frameNumber = pfn2frameNumber(page);
     ASSERT(MapUserPhysicalPages(pte2va(new), 1, &frameNumber));
-    linkAdd(page, &headActiveList);
     page->pte = new;
+    page->status = ACTIVE;
     new->valid.valid = VALID;
     new->valid.frameNumber = frameNumber;
 }
@@ -650,6 +705,7 @@ pfn* standbyFree() {
 
 VOID pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages) {
 
+    // Maybe change to less than 10% or so
     if (isEmpty(&headFreeList) && isEmpty(&headStandbyList)) {
         pageTrimmer();
         writeToDisk();
@@ -663,6 +719,7 @@ VOID pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages) {
     // IT NEEDS TO BE REPLACED WITH A TRUE MEMORY MANAGEMENT
     // STATE MACHINE !
     //
+    // WHY?? is this the right way to structure the locks?
     pte* x = va2pte(arbitrary_va);
     pfn* page;
     if (x->transition.transition == TRANSITION) {
@@ -682,7 +739,7 @@ VOID pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages) {
             }
 
 
-        if (page->MODIFIED_OR_STANDBY == STANDBY) {
+        if (page->status == STANDBY) {
             isFull[page->diskIndex] = FALSE;
         }
         linkRemovePFN(page);
@@ -696,7 +753,7 @@ VOID pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages) {
             readFromDisk(x->disk.diskIndex, pfn2frameNumber(page));
         }
     }
-    MAS(page, x);
+    mapandset(page, x);
 }
 
 VOID
@@ -849,7 +906,7 @@ full_virtual_memory_test (
         linkAdd(p, &headFreeList);
         p->pte = 0;
         p->diskIndex = 0;
-        p->MODIFIED_OR_STANDBY = 0;
+        p->status = 0;
     }
     //
 
