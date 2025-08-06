@@ -6,12 +6,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "macros.h"
 #include "util.h"
 #include "vm.h"
 #include "pt.h"
 #include "disk.h"
 #include "list.h"
+#include "trim.h"
+#include "diskWrite.h"
 
 #pragma comment(lib, "advapi32.lib")
 
@@ -24,6 +25,30 @@ pte* ptes;
 pfn* pfnStart;
 PULONG_PTR vaStart;
 PVOID transferVa;
+PVOID diskTransferVa;
+
+// Threads
+HANDLE threadTrim;
+HANDLE threadDiskWrite;
+
+// Events
+HANDLE eventStartTrim;
+HANDLE eventStartDiskWrite;
+HANDLE eventPagesReady; // User threads have something to wait on while worker threads, well, work
+HANDLE eventSystemShutdown;
+
+VOID initializeThreads() {
+    threadTrim = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) threadPageTrimmer, NULL, 0, NULL);
+    threadDiskWrite = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) threadWriteToDisk, NULL, 0, NULL);
+}
+
+VOID initializeEvents() {
+    eventStartTrim = CreateEvent(NULL, AUTO, FALSE, NULL);
+    eventStartDiskWrite = CreateEvent(NULL, AUTO, FALSE, NULL);
+    eventPagesReady = CreateEvent(NULL, MANUAL, FALSE, NULL);
+    eventSystemStart = CreateEvent(NULL, MANUAL, FALSE, NULL);
+    eventSystemShutdown = CreateEvent(NULL, MANUAL, FALSE, NULL);
+}
 
 BOOL
 GetPrivilege  (
@@ -290,6 +315,22 @@ full_virtual_memory_test (
     parameter.Type = MemExtendedParameterUserPhysicalHandle;
     parameter.Handle = physical_page_handle;
 
+    diskTransferVa = VirtualAlloc2 (NULL,
+                       NULL,
+                       BATCH_SIZE * PAGE_SIZE,
+                       MEM_RESERVE | MEM_PHYSICAL,
+                       PAGE_READWRITE,
+                       &parameter,
+                       1);
+
+    transferVa = VirtualAlloc2 (NULL,
+                       NULL,
+                       PAGE_SIZE,
+                       MEM_RESERVE | MEM_PHYSICAL,
+                       PAGE_READWRITE,
+                       &parameter,
+                       1);
+
     vaStart = VirtualAlloc2 (NULL,
                        NULL,
                        virtual_address_size,
@@ -320,15 +361,13 @@ full_virtual_memory_test (
 
     ptes = initialize(numBytes);
 
-    transferVa = VirtualAlloc (NULL,
-                      BATCH_SIZE * PAGE_SIZE,
-                      MEM_RESERVE | MEM_PHYSICAL,
-                      PAGE_READWRITE);
-
     initializeListHeads();
     initializeListLocks();
     commitSparseArray(physical_page_numbers);
     initializeDisk();
+
+    initializeThreads();
+    initializeEvents();
 
     // Initialize free list with all pages
     for (int i = 0; i < NUMBER_OF_PHYSICAL_PAGES; i++) {
@@ -338,6 +377,8 @@ full_virtual_memory_test (
         p->diskIndex = 0;
         p->status = 0;
     }
+
+    SetEvent(eventSystemStart);
 
     //
     // Now perform random accesses.

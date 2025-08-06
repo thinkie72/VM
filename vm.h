@@ -1,7 +1,6 @@
 //
 // Created by tyler on 7/30/2025.
 //
-#endif //VM_H
 
 //
 // vm.h
@@ -21,7 +20,7 @@
 // detect and fix unintended failures to unmap virtual addresses properly.
 //
 
-#define SUPPORT_MULTIPLE_VA_TO_SAME_PAGE 0
+#define SUPPORT_MULTIPLE_VA_TO_SAME_PAGE 1
 
 #define PAGE_SIZE                   4096
 
@@ -45,7 +44,7 @@
 // virtual address space !
 //
 
-#define NUMBER_OF_PHYSICAL_PAGES   ((VIRTUAL_ADDRESS_SIZE / PAGE_SIZE) / 64)
+#define NUMBER_OF_PHYSICAL_PAGES   ((VIRTUAL_ADDRESS_SIZE / (2 * PAGE_SIZE))
 
 #define DISK_DIVISIONS              8
 
@@ -66,6 +65,9 @@
 
 #define INVALID                     0
 #define VALID                       1
+
+#define AUTO                        0
+#define MANUAL                      1
 
 //
 // PTE structures
@@ -114,6 +116,23 @@ extern pte* ptes;
 extern pfn* pfnStart;
 extern PULONG_PTR vaStart;
 extern PVOID transferVa;
+extern PVOID diskTransferVa;
+
+
+//
+// Threads
+//
+extern HANDLE threadTrim;
+extern HANDLE threadDiskWrite;
+
+//
+// Events
+//
+extern HANDLE eventStartTrim;
+extern HANDLE eventStartDiskWrite;
+extern HANDLE eventPagesReady;
+extern HANDLE eventSystemStart;
+extern HANDLE eventSystemShutdown;
 
 //
 // Function declarations

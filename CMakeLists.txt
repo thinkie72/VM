@@ -4,7 +4,6 @@ project(VM C)
 set(CMAKE_C_STANDARD 11)
 
 add_executable(VM vm.c
-        macros.h
         util.h
         vm.h
         pt.h
@@ -12,4 +11,9 @@ add_executable(VM vm.c
         list.c
         list.h
         disk.c
-        disk.h)
+        disk.h
+        threadPageTrimmer.c
+        trim.h
+        threadWriteToDisk.c
+        diskWrite.h
+        main.c)

@@ -7,7 +7,7 @@
 #define DISK_MANAGER_H
 
 #include <windows.h>
-#include "memory_manager.h"
+#include "vm.h"
 
 //
 // Global disk variables
@@ -22,7 +22,6 @@ extern ULONG64 diskIndex;
 //
 VOID initializeDisk(void);
 ULONG64 findFreeDiskSlot(void);
-VOID writeToDisk(void);
 void readFromDisk(ULONG64 diskIndex, ULONG64 frameNumber);
 
 #endif // DISK_MANAGER_H

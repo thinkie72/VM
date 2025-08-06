@@ -17,9 +17,8 @@ PVOID pte2va(pte* pte);
 pfn* frameNumber2pfn(ULONG64 frameNumber);
 ULONG64 pfn2frameNumber(pfn* p);
 
-void mapandset(pfn* page, pte* new);
+void activatePage(pfn* page, pte* new);
 pfn* standbyFree(void);
 VOID pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages);
-VOID pageTrimmer(void);
 
 #endif // PT_H

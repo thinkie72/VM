@@ -6,168 +6,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "macros.h"
 #include "util.h"
 #include "vm.h"
 #include "pt.h"
 #include "disk.h"
 #include "list.h"
-
-VOID
-malloc_test (
-    VOID
-    )
-{
-    unsigned i;
-    PULONG_PTR p;
-    unsigned random_number;
-
-    p = malloc (VIRTUAL_ADDRESS_SIZE);
-
-    if (p == NULL) {
-        printf ("malloc_test : could not malloc memory\n");
-        return;
-    }
-
-    for (i = 0; i < MB (1); i += 1) {
-
-        //
-        // Randomly access different portions of the virtual address
-        // space we obtained above.
-        //
-        // If we have never accessed the surrounding page size (4K)
-        // portion, the operating system will receive a page fault
-        // from the CPU and proceed to obtain a physical page and
-        // install a PTE to map it - thus connecting the end-to-end
-        // virtual address translation.  Then the operating system
-        // will tell the CPU to repeat the instruction that accessed
-        // the virtual address and this time, the CPU will see the
-        // valid PTE and proceed to obtain the physical contents
-        // (without faulting to the operating system again).
-        //
-
-        random_number = (unsigned) (ReadTimeStampCounter() >> 4);
-
-        random_number %= VIRTUAL_ADDRESS_SIZE_IN_UNSIGNED_CHUNKS;
-
-        //
-        // Write the virtual address into each page.  If we need to
-        // debug anything, we'll be able to see these in the pages.
-        //
-
-        *(p + random_number) = (ULONG_PTR) p;
-    }
-
-    printf ("malloc_test : finished accessing %u random virtual addresses\n", i);
-
-    //
-    // Now that we're done with our memory we can be a good
-    // citizen and free it.
-    //
-
-    free (p);
-
-    return;
-}
-
-VOID
-commit_at_fault_time_test (
-    VOID
-    )
-{
-    unsigned i;
-    PULONG_PTR p;
-    PULONG_PTR committed_va;
-    unsigned random_number;
-    BOOL page_faulted;
-
-    p = VirtualAlloc (NULL,
-                      VIRTUAL_ADDRESS_SIZE,
-                      MEM_RESERVE,
-                      PAGE_NOACCESS);
-
-    if (p == NULL) {
-        printf ("commit_at_fault_time_test : could not reserve memory\n");
-        return;
-    }
-
-    for (i = 0; i < MB (1); i += 1) {
-
-        //
-        // Randomly access different portions of the virtual address
-        // space we obtained above.
-        //
-        // If we have never accessed the surrounding page size (4K)
-        // portion, the operating system will receive a page fault
-        // from the CPU and proceed to obtain a physical page and
-        // install a PTE to map it - thus connecting the end-to-end
-        // virtual address translation.  Then the operating system
-        // will tell the CPU to repeat the instruction that accessed
-        // the virtual address and this time, the CPU will see the
-        // valid PTE and proceed to obtain the physical contents
-        // (without faulting to the operating system again).
-        //
-
-        random_number = (unsigned) (ReadTimeStampCounter() >> 4);
-
-        random_number %= VIRTUAL_ADDRESS_SIZE_IN_UNSIGNED_CHUNKS;
-
-        //
-        // Write the virtual address into each page.  If we need to
-        // debug anything, we'll be able to see these in the pages.
-        //
-
-        page_faulted = FALSE;
-
-        __try {
-
-            *(p + random_number) = (ULONG_PTR) p;
-
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-
-            page_faulted = TRUE;
-        }
-
-        if (page_faulted) {
-
-            //
-            // Commit the virtual address now - if that succeeds then
-            // we'll be able to access it from now on.
-            //
-
-            committed_va = p + random_number;
-
-            committed_va = VirtualAlloc (committed_va,
-                                         sizeof (ULONG_PTR),
-                                         MEM_COMMIT,
-                                         PAGE_READWRITE);
-
-            if (committed_va == NULL) {
-                printf ("commit_at_fault_time_test : could not commit memory\n");
-                return;
-            }
-
-            //
-            // No exception handler needed now since we are guaranteed
-            // by virtue of our commit that the operating system will
-            // honor our access.
-            //
-
-            *committed_va = (ULONG_PTR) committed_va;
-        }
-    }
-
-    printf ("commit_at_fault_time_test : finished accessing %u random virtual addresses\n", i);
-
-    //
-    // Now that we're done with our memory we can be a good
-    // citizen and free it.
-    //
-
-    VirtualFree (p, 0, MEM_RELEASE);
-
-    return;
-}
 
 VOID
 main (
@@ -219,8 +62,12 @@ main (
     //
     // This is where we can be as creative as we like, the sky's the limit !
     //
+    // TODO: consider adding tick count to benchmark time elapsed
 
+    ULONG64 start = GetTickCount64();
     full_virtual_memory_test ();
-
+    ULONG64 end = GetTickCount64();
+    printf("Date: %s", "08.05.2025");
+    printf("%llu", end - start);
     return;
 }
