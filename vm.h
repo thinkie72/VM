@@ -44,7 +44,7 @@
 // virtual address space !
 //
 
-#define NUMBER_OF_PHYSICAL_PAGES   ((VIRTUAL_ADDRESS_SIZE / (2 * PAGE_SIZE))
+#define NUMBER_OF_PHYSICAL_PAGES   (VIRTUAL_ADDRESS_SIZE / (2 * PAGE_SIZE))
 
 #define DISK_DIVISIONS              8
 
@@ -68,6 +68,9 @@
 
 #define AUTO                        0
 #define MANUAL                      1
+
+#define REDO                        0
+#define SUCCESS                     1
 
 //
 // PTE structures
@@ -118,6 +121,7 @@ extern PULONG_PTR vaStart;
 extern PVOID transferVa;
 extern PVOID diskTransferVa;
 
+extern ULONG64 activeCount;
 
 //
 // Threads
@@ -130,6 +134,7 @@ extern HANDLE threadDiskWrite;
 //
 extern HANDLE eventStartTrim;
 extern HANDLE eventStartDiskWrite;
+extern HANDLE eventRedoFault;
 extern HANDLE eventPagesReady;
 extern HANDLE eventSystemStart;
 extern HANDLE eventSystemShutdown;

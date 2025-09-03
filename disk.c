@@ -19,27 +19,30 @@ boolean* isFull;
 ULONG64 diskIndex;
 
 VOID initializeDisk() {
-    diskBytes = VIRTUAL_ADDRESS_SIZE - ((NUMBER_OF_PHYSICAL_PAGES + 1) * PAGE_SIZE);
+    // diskBytes = VIRTUAL_ADDRESS_SIZE - (NUMBER_OF_PHYSICAL_PAGES - 2) * PAGE_SIZE;
+    diskBytes = VIRTUAL_ADDRESS_SIZE;
     disk = initialize(diskBytes);
     isFull = initialize(diskBytes / PAGE_SIZE);
+    isFull[0] = TRUE;
     diskIndex = 1;
 }
 
 ULONG64 findFreeDiskSlot() {
     boolean full = TRUE;
     ULONG64 startIndex = diskIndex;
-    ULONG64 currentIndex = ++diskIndex;
+    ULONG64 currentIndex = diskIndex;
 
     // Look for a free slot - search through all slots once
     do {
         // Wrap around logic
         if (currentIndex >= diskBytes / PAGE_SIZE) {
-            currentIndex = 1;  // Reset to 1, not 0
+            currentIndex = 0;  // Reset to 0, not 1 b/c there's a ++ to current index
         }
 
         full = isFull[currentIndex];
         if (!full) {
-            diskIndex = currentIndex;  // Update global diskIndex
+            diskIndex = currentIndex;
+            // Update global diskIndex
             break;
         }
 

@@ -27,6 +27,8 @@ PULONG_PTR vaStart;
 PVOID transferVa;
 PVOID diskTransferVa;
 
+ULONG64 activeCount;
+
 // Threads
 HANDLE threadTrim;
 HANDLE threadDiskWrite;
@@ -34,7 +36,7 @@ HANDLE threadDiskWrite;
 // Events
 HANDLE eventStartTrim;
 HANDLE eventStartDiskWrite;
-HANDLE eventPagesReady; // User threads have something to wait on while worker threads, well, work
+HANDLE eventRedoFault; // User threads have something to wait on while worker threads, well, work
 HANDLE eventSystemShutdown;
 
 VOID initializeThreads() {
@@ -45,7 +47,7 @@ VOID initializeThreads() {
 VOID initializeEvents() {
     eventStartTrim = CreateEvent(NULL, AUTO, FALSE, NULL);
     eventStartDiskWrite = CreateEvent(NULL, AUTO, FALSE, NULL);
-    eventPagesReady = CreateEvent(NULL, MANUAL, FALSE, NULL);
+    eventRedoFault = CreateEvent(NULL, MANUAL, FALSE, NULL);
     eventSystemStart = CreateEvent(NULL, MANUAL, FALSE, NULL);
     eventSystemShutdown = CreateEvent(NULL, MANUAL, FALSE, NULL);
 }
@@ -171,6 +173,7 @@ CreateSharedMemorySection (
 PVOID initialize(ULONG64 numBytes) {
     PVOID new;
     new = malloc(numBytes);
+    ASSERT(new);
     memset(new, 0, numBytes);
     return new;
 }
@@ -315,6 +318,8 @@ full_virtual_memory_test (
     parameter.Type = MemExtendedParameterUserPhysicalHandle;
     parameter.Handle = physical_page_handle;
 
+    activeCount = 0;
+
     diskTransferVa = VirtualAlloc2 (NULL,
                        NULL,
                        BATCH_SIZE * PAGE_SIZE,
@@ -384,43 +389,18 @@ full_virtual_memory_test (
     // Now perform random accesses.
     //
 
-    for (i = 0; i < MB (1); i += 1) {
+    boolean redo = FALSE;
+    boolean trySameAddress = FALSE;
 
-        //
-        // Randomly access different portions of the virtual address
-        // space we obtained above.
-        //
-        // If we have never accessed the surrounding page size (4K)
-        // portion, the operating system will receive a page fault
-        // from the CPU and proceed to obtain a physical page and
-        // install a PTE to map it - thus connecting the end-to-end
-        // virtual address translation.  Then the operating system
-        // will tell the CPU to repeat the instruction that accessed
-        // the virtual address and this time, the CPU will see the
-        // valid PTE and proceed to obtain the physical contents
-        // (without faulting to the operating system again).
-        //
+    for (i = 0; i < MB (10); i += 1) {
 
-        random_number = (unsigned) (ReadTimeStampCounter() >> 4);
-
-        random_number %= virtual_address_size_in_unsigned_chunks;
-
-        //
-        // Write the virtual address into each page.  If we need to
-        // debug anything, we'll be able to see these in the pages.
-        //
-
-        page_faulted = FALSE;
-
-        //
-        // Ensure the write to the arbitrary virtual address doesn't
-        // straddle a PAGE_SIZE boundary just to keep things simple for
-        // now.
-        //
-
-        random_number &= ~0x7;
-
-        arbitrary_va = vaStart + random_number;
+        if (!trySameAddress) {
+            random_number = (unsigned) (ReadTimeStampCounter() >> 4);
+            random_number %= virtual_address_size_in_unsigned_chunks;
+            page_faulted = FALSE;
+            random_number &= ~0x7;
+            arbitrary_va = vaStart + random_number;
+        }
 
         __try {
 
@@ -432,15 +412,19 @@ full_virtual_memory_test (
         }
 
         if (page_faulted) {
-            pageFaultHandler(arbitrary_va, physical_page_numbers);
+            do {
+                redo = pageFaultHandler(arbitrary_va, physical_page_numbers);
+            } while (redo);
 
-            //
+            i--;
+
+            trySameAddress = TRUE;
+
+
             // No exception handler needed now since we have connected
             // the virtual address above to one of our physical pages
             // so no subsequent fault can occur.
             //
-
-            *arbitrary_va = (ULONG_PTR) arbitrary_va;
 
             //
             // Unmap the virtual address translation we installed above
@@ -457,6 +441,8 @@ full_virtual_memory_test (
 #endif
             // committed_va = p + random_number;
             // committed_va = VirtualAlloc(committed_va, sizeof(ULONG
+        } else {
+            trySameAddress = FALSE;
         }
     }
 

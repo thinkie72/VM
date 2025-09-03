@@ -29,10 +29,7 @@ void threadPageTrimmer(void* params) {
     pfn* pages[BATCH_SIZE];
     PVOID batch[BATCH_SIZE];
 
-    int i = 0;
-    ULONG64 scanIndex = 0;  // Remember where we left off
-    ULONG64 pagesScanned = 0;
-    ULONG64 totalPages = VIRTUAL_ADDRESS_SIZE / PAGE_SIZE;
+    ULONG64 totalPtes = VIRTUAL_ADDRESS_SIZE / PAGE_SIZE;
 
     // no shutdown waiting, most basic (EITHER have this, or the WaitForMultipleObjects, not both!)
     WaitForSingleObject(eventSystemStart, INFINITE);
@@ -53,25 +50,28 @@ void threadPageTrimmer(void* params) {
 
         EnterCriticalSection(&lockPTE);
 
+        int i = 0;
+        ULONG64 scanIndex = 0;  // Remember where we left off
+        ULONG64 ptesScanned = 0;
+
         // Scan from where we left off last time
-        while (i < BATCH_SIZE && pagesScanned < totalPages) {
+        while (i < BATCH_SIZE && ptesScanned < totalPtes) {
             pte* currentPte = &ptes[scanIndex];
 
             // Only process valid pages that are mapped to physical memory
             if (currentPte->valid.valid == VALID) {
                 pfn* page = frameNumber2pfn(currentPte->valid.frameNumber);
 
+                ASSERT(page->status == ACTIVE);
                 // Check if this page is active and can be trimmed
-                if (page->status == ACTIVE) {
-                    pages[i] = page;
-                    batch[i] = pte2va(currentPte);
-                    i++;
-                }
+                pages[i] = page;
+                batch[i] = pte2va(currentPte);
+                i++;
             }
 
             // Move to next page, wrap around if needed
-            scanIndex = (scanIndex + 1) % totalPages;
-            pagesScanned++;
+            scanIndex = (scanIndex + 1) % totalPtes;
+            ptesScanned++;
         }
 
         if (i != 0) {
@@ -81,6 +81,7 @@ void threadPageTrimmer(void* params) {
         EnterCriticalSection(&lockModifiedList);
         for (int j = 0; j < i; j++) {
             pages[j]->pte->transition.invalid = INVALID;
+            InterlockedDecrement64(&activeCount);
             pages[j]->pte->transition.transition = TRANSITION;
             pages[j]->status = MODIFIED;
             linkAdd(pages[j], &headModifiedList);

@@ -51,6 +51,8 @@ void threadWriteToDisk(void* params) {
         // do your work
         EnterCriticalSection(&lockPTE);
         EnterCriticalSection(&lockModifiedList);
+
+
         for (i = 0; i < BATCH_SIZE; i++) {
             if (isEmpty(&headModifiedList)) break;
 
@@ -66,9 +68,15 @@ void threadWriteToDisk(void* params) {
         }
         LeaveCriticalSection(&lockModifiedList);
 
-        if (i != 0) {
-            ASSERT(MapUserPhysicalPages(diskTransferVa, i, frameNumbers));
+        // If all the disk slots are full or the modified list is (somehow) empty then return and release PTE lock
+        if (i == 0) {
+            LeaveCriticalSection(&lockPTE);
+            SetEvent(eventRedoFault);
+            continue;
         }
+
+        // Map page contents from their frame number spots to transfer va
+        ASSERT(MapUserPhysicalPages(diskTransferVa, i, frameNumbers));
 
         EnterCriticalSection(&lockStandbyList);
         for (int j = 0; j < i; j++) {
@@ -91,7 +99,7 @@ void threadWriteToDisk(void* params) {
         ASSERT(MapUserPhysicalPages(diskTransferVa, i, NULL));
 
         // signal whoever is waiting on your work, if applicable
-        SetEvent(eventPagesReady); // might be the trimmer setting the mod writer event, or the mod writer setting the waiting-for-pages event for the users
+        SetEvent(eventRedoFault); // might be the trimmer setting the mod writer event, or the mod writer setting the waiting-for-pages event for the users
     }
 
     // We want the thread to run forever, so we should not exit the while loop

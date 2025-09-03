@@ -34,24 +34,31 @@ ULONG64 pfn2frameNumber (pfn* p) {
 void activatePage(pfn* page, pte* new) {
     ULONG64 frameNumber = pfn2frameNumber(page);
     ASSERT(MapUserPhysicalPages(pte2va(new), 1, &frameNumber));
+    page->diskIndex = 0;
+    EnterCriticalSection(&lockPTE);
     page->pte = new;
     page->status = ACTIVE;
     new->valid.valid = VALID;
     new->valid.frameNumber = frameNumber;
+    LeaveCriticalSection(&lockPTE);
+    InterlockedIncrement64(&activeCount);
 }
 
 pfn* standbyFree() {
     EnterCriticalSection(&lockStandbyList);
+    // TODO: add case to restart thread at beginning of page fault handler
+    // Set Trim Again
+    ASSERT(!isEmpty(&headStandbyList));
     pfn* page = linkRemoveHead(&headStandbyList);
-    if (isEmpty(&headStandbyList)) {
-        ResetEvent(eventPagesReady);
-        LeaveCriticalSection(&lockPTE);
-        LeaveCriticalSection(&lockStandbyList);
-        SetEvent(eventStartTrim);
-        WaitForSingleObject(eventPagesReady, INFINITE);
-        EnterCriticalSection(&lockPTE);
-        EnterCriticalSection(&lockStandbyList);
-    }
+    // if (isEmpty(&headStandbyList)) {
+    //     ResetEvent(eventPagesReady);
+    //     LeaveCriticalSection(&lockPTE);
+    //     LeaveCriticalSection(&lockStandbyList);
+    //     SetEvent(eventStartTrim);
+    //     WaitForSingleObject(eventPagesReady, INFINITE);
+    //     EnterCriticalSection(&lockPTE);
+    //     EnterCriticalSection(&lockStandbyList);
+    // }
     LeaveCriticalSection(&lockStandbyList);
 
     // We already have the page table lock
@@ -70,14 +77,7 @@ pfn* standbyFree() {
     return page;
 }
 
-VOID pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages) {
-
-    // Maybe change to less than 10% or so
-    if (isEmpty(&headFreeList) && isEmpty(&headStandbyList)) {
-        ResetEvent(eventPagesReady);
-        SetEvent(eventStartTrim);
-        WaitForSingleObject(eventPagesReady, INFINITE);
-    }
+BOOL pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages) {
     //
     // Connect the virtual address now - if that succeeds then
     // we'll be able to access it from now on.
@@ -90,41 +90,58 @@ VOID pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages) {
     EnterCriticalSection(&lockPTE);
     pte* x = va2pte(arbitrary_va);
     pfn* page;
-    if (x->transition.transition == TRANSITION) {
+    boolean rescue = x->transition.transition == TRANSITION;
+    if (rescue) {
         page = frameNumber2pfn(x->transition.frameNumber);
-
         // Add NULL check here
-        ASSERT(page != NULL);
+        ASSERT(page);
 
-        // Add bounds check for the PFN pointer
-        if ((ULONG64)page < (ULONG64)pfnStart ||
-            (ULONG64)page >= (ULONG64)pfnStart + (getMaxFrameNumber(pages) + 1) * sizeof(pfn)) {
-            DebugBreak();
-            return;
-            }
+        LeaveCriticalSection(&lockPTE);
 
+        // TODO: redo
 
         if (page->status == STANDBY) {
+            ASSERT(isFull[page->diskIndex]);
             isFull[page->diskIndex] = FALSE;
         }
         linkRemovePFN(page);
     } else {
+        LeaveCriticalSection(&lockPTE);
+        // Now we know the pte is in zero or disk format (can't be active b/c it won't be faulted on)
+        // Either way, we need a free page
         EnterCriticalSection(&lockFreeList);
-        if (isEmpty(&headFreeList)) {
-            LeaveCriticalSection(&lockFreeList);
-            page = standbyFree();
-            // TODO: add case and wake up trimmer thread
-            ASSERT(page != NULL);
-        } else {
+        boolean free = !isEmpty(&headFreeList);
+        LeaveCriticalSection(&lockFreeList);
+
+        EnterCriticalSection(&lockStandbyList);
+        boolean standby = !isEmpty(&headStandbyList);
+        LeaveCriticalSection(&lockStandbyList);
+
+        if (free) {
+            EnterCriticalSection(&lockFreeList);
             page = linkRemoveHead(&headFreeList);
-            ASSERT(page != NULL);
+            ASSERT(page);
             LeaveCriticalSection(&lockFreeList);
-        }
-        if (x->disk.disk == DISK) {
-            readFromDisk(x->disk.diskIndex, pfn2frameNumber(page));
+        } else {
+            if (standby) {
+                page = standbyFree();
+                ASSERT(page);
+            }
+            else {
+                ResetEvent(eventRedoFault);
+                SetEvent(eventStartTrim);
+                WaitForSingleObject(eventRedoFault, INFINITE);
+                return REDO;
+            }
+
+            EnterCriticalSection(&lockPTE);
+            if (x->disk.diskIndex != 0) {
+                readFromDisk(x->disk.diskIndex, pfn2frameNumber(page));
+            }
+            LeaveCriticalSection(&lockPTE);
         }
     }
     printf(".");
     activatePage(page, x);
-    LeaveCriticalSection(&lockPTE);
+    return SUCCESS;
 }

@@ -19,6 +19,6 @@ ULONG64 pfn2frameNumber(pfn* p);
 
 void activatePage(pfn* page, pte* new);
 pfn* standbyFree(void);
-VOID pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages);
+BOOL pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages);
 
 #endif // PT_H
