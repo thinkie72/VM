@@ -135,7 +135,6 @@ extern HANDLE threadDiskWrite;
 extern HANDLE eventStartTrim;
 extern HANDLE eventStartDiskWrite;
 extern HANDLE eventRedoFault;
-extern HANDLE eventPagesReady;
 extern HANDLE eventSystemStart;
 extern HANDLE eventSystemShutdown;
 

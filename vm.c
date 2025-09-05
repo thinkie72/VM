@@ -392,6 +392,8 @@ full_virtual_memory_test (
     boolean redo = FALSE;
     boolean trySameAddress = FALSE;
 
+    ASSERT(FALSE);
+
     for (i = 0; i < MB (10); i += 1) {
 
         if (!trySameAddress) {
@@ -405,6 +407,7 @@ full_virtual_memory_test (
         __try {
 
             *arbitrary_va = (ULONG_PTR) arbitrary_va;
+            printf("noah");
 
         } __except (EXCEPTION_EXECUTE_HANDLER) {
 

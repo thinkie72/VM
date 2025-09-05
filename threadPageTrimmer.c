@@ -58,6 +58,8 @@ void threadPageTrimmer(void* params) {
         while (i < BATCH_SIZE && ptesScanned < totalPtes) {
             pte* currentPte = &ptes[scanIndex];
 
+            currentPte->valid.valid = VALID;
+
             // Only process valid pages that are mapped to physical memory
             if (currentPte->valid.valid == VALID) {
                 pfn* page = frameNumber2pfn(currentPte->valid.frameNumber);
