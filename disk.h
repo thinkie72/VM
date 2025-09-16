@@ -7,7 +7,7 @@
 #define DISK_MANAGER_H
 
 #include <windows.h>
-#include "vm.h"
+#include "user.h"
 
 //
 // Global disk variables
@@ -16,6 +16,7 @@ extern ULONG64 diskBytes;
 extern PVOID disk;
 extern boolean* isFull;
 extern ULONG64 diskIndex;
+extern volatile LONG64 numFreeDiskSlots;
 
 //
 // Function declarations

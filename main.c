@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <windows.h>
 #include "util.h"
-#include "vm.h"
+#include "user.h"
 #include "pt.h"
 #include "disk.h"
 #include "list.h"

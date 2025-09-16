@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <windows.h>
 #include "util.h"
-#include "vm.h"
+#include "user.h"
 #include "disk.h"
 #include "list.h"
 #include "pt.h"
@@ -17,10 +17,12 @@ ULONG64 diskBytes;
 PVOID disk;
 boolean* isFull;
 ULONG64 diskIndex;
+volatile LONG64 numFreeDiskSlots;
 
 VOID initializeDisk() {
     // diskBytes = VIRTUAL_ADDRESS_SIZE - (NUMBER_OF_PHYSICAL_PAGES - 2) * PAGE_SIZE;
     diskBytes = VIRTUAL_ADDRESS_SIZE;
+    numFreeDiskSlots = diskBytes;
     disk = initialize(diskBytes);
     isFull = initialize(diskBytes / PAGE_SIZE);
     isFull[0] = TRUE;
@@ -54,6 +56,8 @@ ULONG64 findFreeDiskSlot() {
     if (full) return 0;
 
     isFull[diskIndex] = TRUE;
+    InterlockedIncrement64(&numFreeDiskSlots);
+  //  ASSERT(numFreeDiskSlots < VIRTUAL_ADDRESS_SIZE);
     ULONG64 returnIndex = diskIndex;
 
     diskIndex++;
@@ -76,4 +80,6 @@ void readFromDisk(ULONG64 diskIndex, ULONG64 frameNumber) {
     ASSERT(MapUserPhysicalPages(transferVa, 1, NULL));
     
     isFull[diskIndex] = FALSE;
+    InterlockedDecrement64(&numFreeDiskSlots);
+    ASSERT(numFreeDiskSlots >= 0);
 }

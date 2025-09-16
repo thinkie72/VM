@@ -6,12 +6,9 @@
 #include <stdlib.h>
 #include <windows.h>
 #include "util.h"
-#include "vm.h"
 #include "pt.h"
 #include "list.h"
 #include "trim.h"
-#include "disk.h"
-#include "diskWrite.h"
 #include "vm.h"
 
 HANDLE eventStartTrim; // these need to be initialized already
@@ -58,13 +55,12 @@ void threadPageTrimmer(void* params) {
         while (i < BATCH_SIZE && ptesScanned < totalPtes) {
             pte* currentPte = &ptes[scanIndex];
 
-            currentPte->valid.valid = VALID;
-
             // Only process valid pages that are mapped to physical memory
             if (currentPte->valid.valid == VALID) {
                 pfn* page = frameNumber2pfn(currentPte->valid.frameNumber);
 
                 ASSERT(page->status == ACTIVE);
+                ASSERT(page->pte == currentPte);
                 // Check if this page is active and can be trimmed
                 pages[i] = page;
                 batch[i] = pte2va(currentPte);

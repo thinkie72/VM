@@ -35,7 +35,8 @@
 // within bounds.
 //
 
-#define VIRTUAL_ADDRESS_SIZE        MB(16)
+ #define VIRTUAL_ADDRESS_SIZE        MB(16)
+// #define VIRTUAL_ADDRESS_SIZE          16 * PAGE_SIZE
 
 #define VIRTUAL_ADDRESS_SIZE_IN_UNSIGNED_CHUNKS        (VIRTUAL_ADDRESS_SIZE / sizeof (ULONG_PTR))
 
@@ -69,8 +70,8 @@
 #define AUTO                        0
 #define MANUAL                      1
 
-#define REDO                        0
-#define SUCCESS                     1
+#define REDO                        1
+#define SUCCESS                     0
 
 //
 // PTE structures
@@ -128,6 +129,7 @@ extern ULONG64 activeCount;
 //
 extern HANDLE threadTrim;
 extern HANDLE threadDiskWrite;
+extern HANDLE threadMain;
 
 //
 // Events
@@ -137,6 +139,7 @@ extern HANDLE eventStartDiskWrite;
 extern HANDLE eventRedoFault;
 extern HANDLE eventSystemStart;
 extern HANDLE eventSystemShutdown;
+extern HANDLE eventStartUser;
 
 //
 // Function declarations

@@ -4,6 +4,14 @@
 
 #ifndef UTIL_H
 #define UTIL_H
+
+
+#define DBG 1
+#if DBG
 #define ASSERT(x) if (!(x)) DebugBreak();
+#else
+#define ASSERT(x)
+#endif
+
 
 #endif //UTIL_H

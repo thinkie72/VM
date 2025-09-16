@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <windows.h>
 #include "util.h"
-#include "vm.h"
+#include "user.h"
 #include "pt.h"
 #include "list.h"
 #include "disk.h"
@@ -141,7 +141,6 @@ BOOL pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages) {
             LeaveCriticalSection(&lockPTE);
         }
     }
-    printf(".");
     activatePage(page, x);
     return SUCCESS;
 }

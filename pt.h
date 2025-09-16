@@ -7,7 +7,7 @@
 #define PT_H
 
 #include <windows.h>
-#include "vm.h"
+#include "user.h"
 
 //
 // Function declarations

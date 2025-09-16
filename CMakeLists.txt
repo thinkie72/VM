@@ -3,9 +3,9 @@ project(VM C)
 
 set(CMAKE_C_STANDARD 11)
 
-add_executable(VM vm.c
+add_executable(VM threadUser.c
         util.h
-        vm.h
+        user.h
         pt.h
         pt.c
         list.c
@@ -16,4 +16,6 @@ add_executable(VM vm.c
         trim.h
         threadWriteToDisk.c
         diskWrite.h
-        main.c)
+        main.c
+        vm.c
+        vm.h)

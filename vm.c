@@ -7,12 +7,13 @@
 #include <stdlib.h>
 #include <windows.h>
 #include "util.h"
-#include "vm.h"
+#include "user.h"
 #include "pt.h"
 #include "disk.h"
 #include "list.h"
 #include "trim.h"
 #include "diskWrite.h"
+#include "vm.h"
 
 #pragma comment(lib, "advapi32.lib")
 
@@ -32,19 +33,23 @@ ULONG64 activeCount;
 // Threads
 HANDLE threadTrim;
 HANDLE threadDiskWrite;
+HANDLE threadMain;
 
 // Events
 HANDLE eventStartTrim;
 HANDLE eventStartDiskWrite;
 HANDLE eventRedoFault; // User threads have something to wait on while worker threads, well, work
 HANDLE eventSystemShutdown;
+HANDLE eventStartUser;
 
 VOID initializeThreads() {
+    threadMain = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) threadUser, NULL, 0, NULL);
     threadTrim = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) threadPageTrimmer, NULL, 0, NULL);
     threadDiskWrite = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) threadWriteToDisk, NULL, 0, NULL);
 }
 
 VOID initializeEvents() {
+    eventStartUser = CreateEvent(NULL, AUTO, FALSE, NULL);
     eventStartTrim = CreateEvent(NULL, AUTO, FALSE, NULL);
     eventStartDiskWrite = CreateEvent(NULL, AUTO, FALSE, NULL);
     eventRedoFault = CreateEvent(NULL, MANUAL, FALSE, NULL);
@@ -226,7 +231,6 @@ full_virtual_memory_test (
     unsigned random_number;
     BOOL allocated;
     BOOL page_faulted;
-    BOOL privilege;
     BOOL obtained_pages;
     ULONG_PTR physical_page_count;
     PULONG_PTR physical_page_numbers;
@@ -242,7 +246,7 @@ full_virtual_memory_test (
     // right to do.
     //
 
-    privilege = GetPrivilege ();
+    BOOL privilege = GetPrivilege();
 
     if (privilege == FALSE) {
         printf ("full_virtual_memory_test : could not get privilege\n");
@@ -392,14 +396,16 @@ full_virtual_memory_test (
     boolean redo = FALSE;
     boolean trySameAddress = FALSE;
 
-    ASSERT(FALSE);
+    // ASSERT(FALSE);
 
     for (i = 0; i < MB (10); i += 1) {
 
+        page_faulted = FALSE;
+
         if (!trySameAddress) {
             random_number = (unsigned) (ReadTimeStampCounter() >> 4);
-            random_number %= virtual_address_size_in_unsigned_chunks;
-            page_faulted = FALSE;
+            random_number %= VIRTUAL_ADDRESS_SIZE_IN_UNSIGNED_CHUNKS;
+
             random_number &= ~0x7;
             arbitrary_va = vaStart + random_number;
         }
@@ -407,7 +413,7 @@ full_virtual_memory_test (
         __try {
 
             *arbitrary_va = (ULONG_PTR) arbitrary_va;
-            printf("noah");
+            // printf("noah");
 
         } __except (EXCEPTION_EXECUTE_HANDLER) {
 
@@ -418,8 +424,6 @@ full_virtual_memory_test (
             do {
                 redo = pageFaultHandler(arbitrary_va, physical_page_numbers);
             } while (redo);
-
-            i--;
 
             trySameAddress = TRUE;
 
