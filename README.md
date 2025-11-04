@@ -2,8 +2,6 @@
 
 A sophisticated usermode virtual memory management system implemented in C for Windows that demonstrates core operating system memory management concepts including page tables, physical frame management, page trimming, and disk-backed virtual memory.
 
-> **Note**: This is a markdown (.md) file. Save as `README.md` in your project directory.
-
 ## Overview
 
 This project implements a complete virtual memory system in userspace using Windows AWE (Address Windowing Extensions) APIs. The system manages virtual-to-physical address translations, handles page faults, performs page trimming, and implements disk-based backing store for pages that don't fit in physical memory.
