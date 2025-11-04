@@ -1,21 +1,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "util.h"
 #include "user.h"
 #include "pt.h"
-#include "disk.h"
-#include "list.h"
 #include "vm.h"
 
 HANDLE eventSystemStart; // these need to be initialized already
 HANDLE eventSystemShutdown;
-
 // user thread sets trim event, wait on WaitingForPagesEvent--> wakes up trimmer, trimmer does work, trimmer sets mod write event
 // --> mod writer wakes up, does work, sets waiting for pages event --> user thread wakes up
 
 
-void threadUser(void* params, PULONG_PTR physical_page_numbers) {
+VOID threadUser(void *params) {
 
     // initialize whatever datastructures the thread needs
 
@@ -33,15 +29,6 @@ void threadUser(void* params, PULONG_PTR physical_page_numbers) {
     events[1] = eventSystemShutdown;
 
     while (TRUE) {
-
-        // allows for clean shutdown of thread at the end of simulation
-        HANDLE events[2];
-        events[0] = eventStartUser;
-        events[1] = eventSystemShutdown;
-
-        if (WaitForMultipleObjects(2, events, FALSE, INFINITE) == 1) {
-            // shutdown, free datastructures, return (killing the thread)
-        }
 
         for (int i = 0; i < MB (10); i += 1) {
 
@@ -68,6 +55,7 @@ void threadUser(void* params, PULONG_PTR physical_page_numbers) {
             if (page_faulted) {
                 do {
                     redo = pageFaultHandler(arbitrary_va, physical_page_numbers);
+                    printf("fault");
                 } while (redo);
 
                 trySameAddress = TRUE;
@@ -98,16 +86,11 @@ void threadUser(void* params, PULONG_PTR physical_page_numbers) {
             }
         }
 
+        return;
     }
-
-
-
-    // We want the thread to run forever, so we should not exit the while loop
-    DebugBreak();
-    return;
 }
 
-
+/*
 // User thread needs to wait for pages!
 
 ResetEvent(waitforpagesevent) // we want the waitforpagesevent to be manual reset, look at parameters in CreateEvent
@@ -121,3 +104,4 @@ WaitForSingleObject(waitforpagesevent)
 // user thread awakens!
 
 // retry the pagefault, our information before this point might be invalid
+*/

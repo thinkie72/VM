@@ -7,10 +7,8 @@
 #include <stdlib.h>
 #include <windows.h>
 #include "util.h"
-#include "user.h"
+#include "vm.h"
 #include "disk.h"
-#include "list.h"
-#include "pt.h"
 
 // Global disk variables
 ULONG64 diskBytes;

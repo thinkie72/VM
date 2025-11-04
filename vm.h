@@ -73,6 +73,8 @@
 #define REDO                        1
 #define SUCCESS                     0
 
+#define THREADS                     2
+
 //
 // PTE structures
 //
@@ -103,6 +105,11 @@ typedef struct {
     };
 } pte;
 
+typedef struct {
+    ULONG index;
+    PVOID transferVa;
+} threadInfo;
+
 //
 // PFN structure
 //
@@ -123,13 +130,17 @@ extern PVOID transferVa;
 extern PVOID diskTransferVa;
 
 extern ULONG64 activeCount;
+extern ULONG64 pagesActivated;
+
+extern HANDLE physical_page_handle;
+extern BOOL privilege;
 
 //
 // Threads
 //
 extern HANDLE threadTrim;
 extern HANDLE threadDiskWrite;
-extern HANDLE threadMain;
+extern HANDLE threadsUser[2];
 
 //
 // Events

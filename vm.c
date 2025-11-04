@@ -29,11 +29,18 @@ PVOID transferVa;
 PVOID diskTransferVa;
 
 ULONG64 activeCount;
+ULONG64 pagesActivated;
+
+HANDLE physical_page_handle;
+BOOL privelege;
 
 // Threads
 HANDLE threadTrim;
 HANDLE threadDiskWrite;
-HANDLE threadMain;
+HANDLE threadsUser[THREADS];
+
+// Thread info
+threadInfo info[THREADS];
 
 // Events
 HANDLE eventStartTrim;
@@ -43,7 +50,27 @@ HANDLE eventSystemShutdown;
 HANDLE eventStartUser;
 
 VOID initializeThreads() {
-    threadMain = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) threadUser, NULL, 0, NULL);
+    MEM_EXTENDED_PARAMETER parameter = { 0 };
+
+    //
+    // Allocate a MEM_PHYSICAL region that is "connected" to the AWE section
+    // created above.
+    //
+
+    parameter.Type = MemExtendedParameterUserPhysicalHandle;
+    parameter.Handle = physical_page_handle;
+    for (int i = 0; i < THREADS; i++) {
+        info[i].index = i;
+        info[i].transferVa = VirtualAlloc2 (NULL,
+                       NULL,
+                       PAGE_SIZE,
+                       MEM_RESERVE | MEM_PHYSICAL,
+                       PAGE_READWRITE,
+                       &parameter,
+                       1);
+
+        threadsUser[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) threadUser, &info[i], 0, NULL);
+    }
     threadTrim = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) threadPageTrimmer, NULL, 0, NULL);
     threadDiskWrite = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) threadWriteToDisk, NULL, 0, NULL);
 }
@@ -234,7 +261,6 @@ full_virtual_memory_test (
     BOOL obtained_pages;
     ULONG_PTR physical_page_count;
     PULONG_PTR physical_page_numbers;
-    HANDLE physical_page_handle;
     ULONG_PTR virtual_address_size;
     ULONG_PTR virtual_address_size_in_unsigned_chunks;
 
@@ -246,7 +272,7 @@ full_virtual_memory_test (
     // right to do.
     //
 
-    BOOL privilege = GetPrivilege();
+    privilege = GetPrivilege();
 
     if (privilege == FALSE) {
         printf ("full_virtual_memory_test : could not get privilege\n");
@@ -255,7 +281,7 @@ full_virtual_memory_test (
 
 #if SUPPORT_MULTIPLE_VA_TO_SAME_PAGE
 
-    physical_page_handle = CreateSharedMemorySection ();
+    physical_page_handle = CreateSharedMemorySection();
 
     if (physical_page_handle == NULL) {
         printf ("CreateFileMapping2 failed, error %#x\n", GetLastError ());
@@ -332,14 +358,6 @@ full_virtual_memory_test (
                        &parameter,
                        1);
 
-    transferVa = VirtualAlloc2 (NULL,
-                       NULL,
-                       PAGE_SIZE,
-                       MEM_RESERVE | MEM_PHYSICAL,
-                       PAGE_READWRITE,
-                       &parameter,
-                       1);
-
     vaStart = VirtualAlloc2 (NULL,
                        NULL,
                        virtual_address_size,
@@ -389,71 +407,19 @@ full_virtual_memory_test (
 
     SetEvent(eventSystemStart);
 
-    //
-    // Now perform random accesses.
-    //
+    SetEvent(eventStartUser);
 
-    boolean redo = FALSE;
-    boolean trySameAddress = FALSE;
-
-    // ASSERT(FALSE);
-
-    for (i = 0; i < MB (10); i += 1) {
-
-        page_faulted = FALSE;
-
-        if (!trySameAddress) {
-            random_number = (unsigned) (ReadTimeStampCounter() >> 4);
-            random_number %= VIRTUAL_ADDRESS_SIZE_IN_UNSIGNED_CHUNKS;
-
-            random_number &= ~0x7;
-            arbitrary_va = vaStart + random_number;
-        }
-
-        __try {
-
-            *arbitrary_va = (ULONG_PTR) arbitrary_va;
-            // printf("noah");
-
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-
-            page_faulted = TRUE;
-        }
-
-        if (page_faulted) {
-            do {
-                redo = pageFaultHandler(arbitrary_va, physical_page_numbers);
-            } while (redo);
-
-            trySameAddress = TRUE;
-
-
-            // No exception handler needed now since we have connected
-            // the virtual address above to one of our physical pages
-            // so no subsequent fault can occur.
-            //
-
-            //
-            // Unmap the virtual address translation we installed above
-            // now that we're done writing our value into it.
-            //
-
-#if 0
-            if (MapUserPhysicalPages (arbitrary_va, 1, NULL) == FALSE) {
-
-                printf ("full_virtual_memory_test : could not unmap VA %p\n", arbitrary_va);
-
-                return;
-            }
-#endif
-            // committed_va = p + random_number;
-            // committed_va = VirtualAlloc(committed_va, sizeof(ULONG
-        } else {
-            trySameAddress = FALSE;
-        }
+    for (int i = 0; i < THREADS; i++) {
+        WaitForSingleObject (threadsUser[i], INFINITE);
     }
 
-    printf ("full_virtual_memory_test : finished accessing %u random virtual addresses\n", i);
+    WaitForSingleObject (threadTrim, INFINITE);
+
+    WaitForSingleObject (threadDiskWrite, INFINITE);
+
+    SetEvent(eventSystemShutdown);
+
+    printf ("full_virtual_memory_test : finished accessing %llu random virtual addresses\n", pagesActivated);
 
     //
     // Now that we're done with our memory we can be a good

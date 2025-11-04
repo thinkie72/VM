@@ -4,7 +4,7 @@
 //
 
 #include <windows.h>
-#include "user.h"
+#include "vm.h"
 #include "list.h"
 
 // Global list heads

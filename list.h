@@ -7,7 +7,7 @@
 #define LIST_H
 
 #include <windows.h>
-#include "user.h"
+#include "vm.h"
 
 //
 // Global list heads

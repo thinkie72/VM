@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <windows.h>
 #include "util.h"
-#include "user.h"
+#include "vm.h"
 #include "pt.h"
 #include "list.h"
 #include "disk.h"
@@ -42,6 +42,7 @@ void activatePage(pfn* page, pte* new) {
     new->valid.frameNumber = frameNumber;
     LeaveCriticalSection(&lockPTE);
     InterlockedIncrement64(&activeCount);
+    InterlockedIncrement64(&pagesActivated);
 }
 
 pfn* standbyFree() {
