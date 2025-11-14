@@ -5,11 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "util.h"
-#include "pt.h"
-#include "list.h"
+#include "../util.h"
+#include "../pt/pt.h"
+#include "../list/list.h"
 #include "trim.h"
-#include "vm.h"
+#include "../vm/vm.h"
 
 HANDLE eventStartTrim; // these need to be initialized already
 HANDLE eventSystemStart;
@@ -19,7 +19,7 @@ HANDLE eventSystemShutdown;
 // --> mod writer wakes up, does work, sets waiting for pages event --> user thread wakes up
 
 
-void threadPageTrimmer(void* params) {
+void threadPageTrimmer(LPVOID lpParameter) {
 
     // initialize whatever datastructures the thread needs
 

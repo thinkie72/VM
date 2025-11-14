@@ -5,6 +5,6 @@
 #ifndef DISKWRITE_H
 #define DISKWRITE_H
 
-VOID threadWriteToDisk(void* params);
+VOID threadWriteToDisk(LPVOID lpParameter);
 
 #endif //DISKWRITE_H

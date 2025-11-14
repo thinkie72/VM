@@ -7,7 +7,7 @@
 #define DISK_MANAGER_H
 
 #include <windows.h>
-#include "user.h"
+#include "../user/user.h"
 
 //
 // Global disk variables

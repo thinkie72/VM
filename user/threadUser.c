@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <windows.h>
 #include "user.h"
-#include "pt.h"
-#include "vm.h"
+#include "../pt/pt.h"
+#include "../vm/vm.h"
 
 HANDLE eventSystemStart; // these need to be initialized already
 HANDLE eventSystemShutdown;
@@ -11,14 +11,14 @@ HANDLE eventSystemShutdown;
 // --> mod writer wakes up, does work, sets waiting for pages event --> user thread wakes up
 
 
-VOID threadUser(void *params) {
+VOID threadUser(LPVOID lpParameter) {
 
     // initialize whatever datastructures the thread needs
 
-    PULONG_PTR arbitrary_va;
+    PULONG_PTR arbitrary_va = vaStart;
 
-    boolean redo = FALSE;
-    boolean trySameAddress = FALSE;
+    BOOL redo = FALSE;
+    BOOL trySameAddress = FALSE;
 
     // no shutdown waiting, most basic (EITHER have this, or the WaitForMultipleObjects, not both!)
     WaitForSingleObject(eventSystemStart, INFINITE);
@@ -54,7 +54,7 @@ VOID threadUser(void *params) {
 
             if (page_faulted) {
                 do {
-                    redo = pageFaultHandler(arbitrary_va, physical_page_numbers);
+                    redo = pageFaultHandler(arbitrary_va);
                     printf("fault");
                 } while (redo);
 

@@ -7,7 +7,7 @@
 #define PT_H
 
 #include <windows.h>
-#include "vm.h"
+#include "../vm/vm.h"
 
 //
 // Function declarations
@@ -19,6 +19,6 @@ ULONG64 pfn2frameNumber(pfn* p);
 
 void activatePage(pfn* page, pte* new);
 pfn* standbyFree(void);
-BOOL pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages);
+BOOL pageFaultHandler(PVOID arbitrary_va);
 
 #endif // PT_H

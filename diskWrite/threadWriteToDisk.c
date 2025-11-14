@@ -5,12 +5,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "util.h"
-#include "user.h"
-#include "disk.h"
+#include "../util.h"
+#include "../user/user.h"
+#include "../disk/disk.h"
 #include "diskWrite.h"
-#include "list.h"
-#include "pt.h"
+#include "../list/list.h"
+#include "../pt/pt.h"
 
 //
 // threadWriteToDisk.c
@@ -24,10 +24,11 @@ HANDLE eventSystemShutdown;
 // --> mod writer wakes up, does work, sets waiting for pages event --> user thread wakes up
 
 
-void threadWriteToDisk(void* params) {
+void threadWriteToDisk(LPVOID lpParameter) {
 
     // initialize whatever datastructures the thread needs
 
+    ULONG64 writeIndex;
     pfn* pages[BATCH_SIZE];
     ULONG_PTR frameNumbers[BATCH_SIZE];
     ULONG64 diskAddresses[BATCH_SIZE];
@@ -56,15 +57,15 @@ void threadWriteToDisk(void* params) {
         for (i = 0; i < BATCH_SIZE; i++) {
             if (isEmpty(&headModifiedList)) break;
 
-            ULONG64 diskIndex = findFreeDiskSlot();
-            if (diskIndex == 0) {
+            writeIndex = findFreeDiskSlot();
+            if (writeIndex == 0) {
                 break;
             }
 
-            diskAddresses[i] = (ULONG64) disk + diskIndex * PAGE_SIZE;
+            diskAddresses[i] = (ULONG64) disk + writeIndex * PAGE_SIZE;
             pages[i] = linkRemoveHead(&headModifiedList);
             frameNumbers[i] = pfn2frameNumber(pages[i]);
-            pages[i]->diskIndex = diskIndex;
+            pages[i]->diskIndex = writeIndex;
         }
         LeaveCriticalSection(&lockModifiedList);
 

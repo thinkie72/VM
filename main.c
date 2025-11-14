@@ -7,10 +7,10 @@
 #include <stdlib.h>
 #include <windows.h>
 #include "util.h"
-#include "user.h"
-#include "pt.h"
-#include "disk.h"
-#include "list.h"
+#include "user/user.h"
+#include "pt/pt.h"
+#include "disk/disk.h"
+#include "list/list.h"
 
 VOID
 main (

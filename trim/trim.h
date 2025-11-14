@@ -5,6 +5,6 @@
 #ifndef TRIM_H
 #define TRIM_H
 
-VOID threadPageTrimmer(PVOID params);
+VOID threadPageTrimmer(LPVOID lpParameter);
 
 #endif //TRIM_H

@@ -6,11 +6,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "util.h"
-#include "vm.h"
+#include "../util.h"
+#include "../vm/vm.h"
 #include "pt.h"
-#include "list.h"
-#include "disk.h"
+#include "../list/list.h"
+#include "../disk/disk.h"
 
 pte* va2pte(PVOID va) {
     ULONG64 index = ((ULONG_PTR)va - (ULONG_PTR) vaStart) / PAGE_SIZE;
@@ -35,7 +35,7 @@ void activatePage(pfn* page, pte* new) {
     ULONG64 frameNumber = pfn2frameNumber(page);
     ASSERT(MapUserPhysicalPages(pte2va(new), 1, &frameNumber));
     page->diskIndex = 0;
-    EnterCriticalSection(&lockPTE);
+    EnterCriticalSection(&lockPTE) ;
     page->pte = new;
     page->status = ACTIVE;
     new->valid.valid = VALID;
@@ -78,7 +78,7 @@ pfn* standbyFree() {
     return page;
 }
 
-BOOL pageFaultHandler(PVOID arbitrary_va, PULONG_PTR pages) {
+BOOL pageFaultHandler(PVOID arbitrary_va) {
     //
     // Connect the virtual address now - if that succeeds then
     // we'll be able to access it from now on.

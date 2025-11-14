@@ -6,13 +6,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "util.h"
-#include "user.h"
-#include "pt.h"
-#include "disk.h"
-#include "list.h"
-#include "trim.h"
-#include "diskWrite.h"
+#include "../util.h"
+#include "../user/user.h"
+#include "../pt/pt.h"
+#include "../disk/disk.h"
+#include "../list/list.h"
+#include "../trim/trim.h"
+#include "../diskWrite/diskWrite.h"
 #include "vm.h"
 
 #pragma comment(lib, "advapi32.lib")
@@ -28,8 +28,8 @@ PULONG_PTR vaStart;
 PVOID transferVa;
 PVOID diskTransferVa;
 
-ULONG64 activeCount;
-ULONG64 pagesActivated;
+LONG64 activeCount;
+LONG64 pagesActivated;
 
 HANDLE physical_page_handle;
 BOOL privelege;
@@ -252,18 +252,9 @@ full_virtual_memory_test (
     VOID
     )
 {
-    unsigned i;
-    PULONG_PTR p;
-    PULONG_PTR arbitrary_va;
-    unsigned random_number;
     BOOL allocated;
-    BOOL page_faulted;
-    BOOL obtained_pages;
     ULONG_PTR physical_page_count;
     PULONG_PTR physical_page_numbers;
-    ULONG_PTR virtual_address_size;
-    ULONG_PTR virtual_address_size_in_unsigned_chunks;
-
     //
     // Allocate the physical pages that we will be managing.
     //
@@ -331,10 +322,6 @@ full_virtual_memory_test (
     // to illustrate how we can manage the illusion.
     //
 
-    virtual_address_size = 64 * physical_page_count * PAGE_SIZE;
-
-    virtual_address_size_in_unsigned_chunks =
-                        virtual_address_size / sizeof (ULONG_PTR);
 
 #if SUPPORT_MULTIPLE_VA_TO_SAME_PAGE
 
@@ -360,7 +347,7 @@ full_virtual_memory_test (
 
     vaStart = VirtualAlloc2 (NULL,
                        NULL,
-                       virtual_address_size,
+                       VIRTUAL_ADDRESS_SIZE,
                        MEM_RESERVE | MEM_PHYSICAL,
                        PAGE_READWRITE,
                        &parameter,
@@ -384,7 +371,7 @@ full_virtual_memory_test (
         return;
     }
 
-    ULONG64 numBytes = virtual_address_size / PAGE_SIZE * sizeof(pte);
+    ULONG64 numBytes = VIRTUAL_ADDRESS_SIZE / PAGE_SIZE * sizeof(pte);
 
     ptes = initialize(numBytes);
 
@@ -397,20 +384,20 @@ full_virtual_memory_test (
     initializeEvents();
 
     // Initialize free list with all pages
-    for (int i = 0; i < NUMBER_OF_PHYSICAL_PAGES; i++) {
-        pfn* p = pfnStart + physical_page_numbers[i];
-        linkAdd(p, &headFreeList);
-        p->pte = 0;
-        p->diskIndex = 0;
-        p->status = 0;
+    for (int j = 0; j < NUMBER_OF_PHYSICAL_PAGES; j++) {
+        pfn* free = pfnStart + physical_page_numbers[j];
+        linkAdd(free, &headFreeList);
+        free->pte = 0;
+        free->diskIndex = 0;
+        free->status = 0;
     }
 
     SetEvent(eventSystemStart);
 
     SetEvent(eventStartUser);
 
-    for (int i = 0; i < THREADS; i++) {
-        WaitForSingleObject (threadsUser[i], INFINITE);
+    for (int j = 0; j < THREADS; j++) {
+        WaitForSingleObject (threadsUser[j], INFINITE);
     }
 
     WaitForSingleObject (threadTrim, INFINITE);

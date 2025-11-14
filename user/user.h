@@ -5,6 +5,6 @@
 #ifndef USER_H
 #define USER_H
 
-VOID threadUser(PVOID params, PULONG_PTR physical_page_numbers);
+VOID threadUser(LPVOID lpParameter);
 
 #endif //USER_H

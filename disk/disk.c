@@ -6,8 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "util.h"
-#include "vm.h"
+#include "../util.h"
+#include "../vm/vm.h"
 #include "disk.h"
 
 // Global disk variables
@@ -66,9 +66,9 @@ ULONG64 findFreeDiskSlot() {
     return returnIndex;
 }
 
-void readFromDisk(ULONG64 diskIndex, ULONG64 frameNumber) {
+void readFromDisk(ULONG64 readIndex, ULONG64 frameNumber) {
     // reverse write to disk
-    PVOID diskAddress = (PVOID) ((ULONG64) disk + diskIndex * PAGE_SIZE);
+    PVOID diskAddress = (PVOID) ((ULONG64) disk + readIndex * PAGE_SIZE);
 
     ASSERT(MapUserPhysicalPages(transferVa, 1, &frameNumber));
 
@@ -77,7 +77,7 @@ void readFromDisk(ULONG64 diskIndex, ULONG64 frameNumber) {
 
     ASSERT(MapUserPhysicalPages(transferVa, 1, NULL));
     
-    isFull[diskIndex] = FALSE;
+    isFull[readIndex] = FALSE;
     InterlockedDecrement64(&numFreeDiskSlots);
     ASSERT(numFreeDiskSlots >= 0);
 }

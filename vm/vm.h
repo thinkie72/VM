@@ -129,8 +129,8 @@ extern PULONG_PTR vaStart;
 extern PVOID transferVa;
 extern PVOID diskTransferVa;
 
-extern ULONG64 activeCount;
-extern ULONG64 pagesActivated;
+extern LONG64 activeCount;
+extern LONG64 pagesActivated;
 
 extern HANDLE physical_page_handle;
 extern BOOL privilege;
