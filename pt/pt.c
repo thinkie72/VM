@@ -45,7 +45,7 @@ void activatePage(pfn* page, pte* new) {
     InterlockedIncrement64(&pagesActivated);
 }
 
-pfn* standbyFree() {
+pfn* standbyFree(threadInfo* info) {
     EnterCriticalSection(&lockStandbyList);
     // TODO: add case to restart thread at beginning of page fault handler
     // Set Trim Again
@@ -68,17 +68,17 @@ pfn* standbyFree() {
     page->pte->disk.diskIndex = page->diskIndex;
 
     ULONG64 frameNumber = pfn2frameNumber(page);
-    ASSERT(MapUserPhysicalPages(transferVa, 1, &frameNumber));
+    ASSERT(MapUserPhysicalPages(info->transferVa, 1, &frameNumber));
 
     // Zero the page content, not the PFN structure
-    memset(transferVa, 0, PAGE_SIZE);  // Use transferVa, which points to the mapped page
+    memset(info->transferVa, 0, PAGE_SIZE);  // Use transferVa, which points to the mapped page
 
-    ASSERT(MapUserPhysicalPages(transferVa, 1, NULL));
+    ASSERT(MapUserPhysicalPages(info->transferVa, 1, NULL));
 
     return page;
 }
 
-BOOL pageFaultHandler(PVOID arbitrary_va) {
+BOOL pageFaultHandler(PVOID arbitrary_va, threadInfo* info) {
     //
     // Connect the virtual address now - if that succeeds then
     // we'll be able to access it from now on.
@@ -125,7 +125,7 @@ BOOL pageFaultHandler(PVOID arbitrary_va) {
             LeaveCriticalSection(&lockFreeList);
         } else {
             if (standby) {
-                page = standbyFree();
+                page = standbyFree(info);
                 ASSERT(page);
             }
             else {
@@ -137,7 +137,7 @@ BOOL pageFaultHandler(PVOID arbitrary_va) {
 
             EnterCriticalSection(&lockPTE);
             if (x->disk.diskIndex != 0) {
-                readFromDisk(x->disk.diskIndex, pfn2frameNumber(page));
+                readFromDisk(x->disk.diskIndex, pfn2frameNumber(page), info);
             }
             LeaveCriticalSection(&lockPTE);
         }

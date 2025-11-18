@@ -140,7 +140,7 @@ extern BOOL privilege;
 //
 extern HANDLE threadTrim;
 extern HANDLE threadDiskWrite;
-extern HANDLE threadsUser[2];
+extern HANDLE threadsUser[THREADS];
 
 //
 // Events

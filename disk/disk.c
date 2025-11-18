@@ -66,16 +66,16 @@ ULONG64 findFreeDiskSlot() {
     return returnIndex;
 }
 
-void readFromDisk(ULONG64 readIndex, ULONG64 frameNumber) {
+void readFromDisk(ULONG64 readIndex, ULONG64 frameNumber, threadInfo* info) {
     // reverse write to disk
     PVOID diskAddress = (PVOID) ((ULONG64) disk + readIndex * PAGE_SIZE);
 
-    ASSERT(MapUserPhysicalPages(transferVa, 1, &frameNumber));
+    ASSERT(MapUserPhysicalPages(info->transferVa, 1, &frameNumber));
 
     // Copy from mapped page to malloced disk
-    ASSERT(memcpy(transferVa, diskAddress, PAGE_SIZE));
+    ASSERT(memcpy(info->transferVa, diskAddress, PAGE_SIZE));
 
-    ASSERT(MapUserPhysicalPages(transferVa, 1, NULL));
+    ASSERT(MapUserPhysicalPages(info->transferVa, 1, NULL));
     
     isFull[readIndex] = FALSE;
     InterlockedDecrement64(&numFreeDiskSlots);

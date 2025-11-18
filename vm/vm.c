@@ -32,7 +32,7 @@ LONG64 activeCount;
 LONG64 pagesActivated;
 
 HANDLE physical_page_handle;
-BOOL privelege;
+BOOL privilege;
 
 // Threads
 HANDLE threadTrim;
@@ -400,11 +400,11 @@ full_virtual_memory_test (
         WaitForSingleObject (threadsUser[j], INFINITE);
     }
 
+    SetEvent(eventSystemShutdown);
+
     WaitForSingleObject (threadTrim, INFINITE);
 
     WaitForSingleObject (threadDiskWrite, INFINITE);
-
-    SetEvent(eventSystemShutdown);
 
     printf ("full_virtual_memory_test : finished accessing %llu random virtual addresses\n", pagesActivated);
 
@@ -414,6 +414,14 @@ full_virtual_memory_test (
     //
 
     VirtualFree (vaStart, 0, MEM_RELEASE);
+    for (int i = 0; i < THREADS; i++) {
+        VirtualFree (info[i].transferVa, 0, MEM_RELEASE);
+    }
+    VirtualFree (diskTransferVa, 0, MEM_RELEASE);
+    VirtualFree (pfnStart, 0, MEM_RELEASE);
 
+    free(disk);
+    free(isFull);
+    free(ptes);
     return;
 }

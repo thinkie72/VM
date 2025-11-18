@@ -40,6 +40,7 @@ void threadPageTrimmer(LPVOID lpParameter) {
 
         if (WaitForMultipleObjects(2, events, FALSE, INFINITE) == 1) {
             // shutdown, free datastructures, return (killing the thread)
+            return;
         }
 
 

@@ -54,7 +54,7 @@ VOID threadUser(LPVOID lpParameter) {
 
             if (page_faulted) {
                 do {
-                    redo = pageFaultHandler(arbitrary_va);
+                    redo = pageFaultHandler(arbitrary_va, (threadInfo *) lpParameter);
                     printf("fault");
                 } while (redo);
 
