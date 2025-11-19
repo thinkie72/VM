@@ -30,7 +30,7 @@ VOID threadUser(LPVOID lpParameter) {
 
     while (TRUE) {
 
-        for (int i = 0; i < MB (10); i += 1) {
+        for (int i = 0; i < MB(1); i += 1) {
 
             BOOL page_faulted = FALSE;
 
@@ -55,7 +55,6 @@ VOID threadUser(LPVOID lpParameter) {
             if (page_faulted) {
                 do {
                     redo = pageFaultHandler(arbitrary_va, (threadInfo *) lpParameter);
-                    printf("fault");
                 } while (redo);
 
                 trySameAddress = TRUE;

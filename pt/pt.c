@@ -49,7 +49,9 @@ pfn* standbyFree(threadInfo* info) {
     EnterCriticalSection(&lockStandbyList);
     // TODO: add case to restart thread at beginning of page fault handler
     // Set Trim Again
-    ASSERT(!isEmpty(&headStandbyList));
+    if (!isEmpty(&headStandbyList) {
+        SetEvent(eventStartTrim);
+    }
     pfn* page = linkRemoveHead(&headStandbyList);
     // if (isEmpty(&headStandbyList)) {
     //     ResetEvent(eventPagesReady);
@@ -63,9 +65,11 @@ pfn* standbyFree(threadInfo* info) {
     LeaveCriticalSection(&lockStandbyList);
 
     // We already have the page table lock
+    EnterCriticalSection(&lockPTE);
     page->pte->disk.invalid = INVALID;
     page->pte->disk.disk = DISK;
     page->pte->disk.diskIndex = page->diskIndex;
+    LeaveCriticalSection(&lockPTE);
 
     ULONG64 frameNumber = pfn2frameNumber(page);
     ASSERT(MapUserPhysicalPages(info->transferVa, 1, &frameNumber));
@@ -99,7 +103,7 @@ BOOL pageFaultHandler(PVOID arbitrary_va, threadInfo* info) {
 
         LeaveCriticalSection(&lockPTE);
 
-        // TODO: redo
+        if (x->valid.valid == VALID) return SUCCESS;
 
         if (page->status == STANDBY) {
             ASSERT(isFull[page->diskIndex]);
@@ -136,6 +140,12 @@ BOOL pageFaultHandler(PVOID arbitrary_va, threadInfo* info) {
             }
 
             EnterCriticalSection(&lockPTE);
+
+            if (x->valid.valid == VALID) {
+                LeaveCriticalSection(&lockPTE);
+                return SUCCESS;
+            }
+
             if (x->disk.diskIndex != 0) {
                 readFromDisk(x->disk.diskIndex, pfn2frameNumber(page), info);
             }
