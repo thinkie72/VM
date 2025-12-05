@@ -25,7 +25,8 @@ set(VM_HEADERS
         user/user.h
         trim/trim.h
         diskWrite/diskWrite.h
-        util.h
+        util/util.h
+        util/util.c
 )
 
 # Create executable

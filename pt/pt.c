@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "../util.h"
+#include "../util/util.h"
 #include "../vm/vm.h"
 #include "pt.h"
 #include "../list/list.h"
@@ -43,14 +43,21 @@ void activatePage(pfn* page, pte* new) {
     LeaveCriticalSection(&lockPTE);
     InterlockedIncrement64(&activeCount);
     InterlockedIncrement64(&pagesActivated);
+    printf(".");
 }
 
 pfn* standbyFree(threadInfo* info) {
     EnterCriticalSection(&lockStandbyList);
-    // TODO: add case to restart thread at beginning of page fault handler
+    log_lock_event(LOCK_ACQUIRE, &lockStandbyList, USER);
     // Set Trim Again
-    if (!isEmpty(&headStandbyList) {
+    if (!isEmpty(&headStandbyList)) {
+        log_lock_event(LOCK_RELEASE, &lockStandbyList, USER);
+        LeaveCriticalSection(&lockStandbyList);
+        LeaveCriticalSection(&lockPTE);
         SetEvent(eventStartTrim);
+        WaitForSingleObject(eventRedoFault, INFINITE);
+        EnterCriticalSection(&lockStandbyList);
+        log_lock_event(LOCK_ACQUIRE, &lockStandbyList, USER);
     }
     pfn* page = linkRemoveHead(&headStandbyList);
     // if (isEmpty(&headStandbyList)) {
@@ -62,6 +69,7 @@ pfn* standbyFree(threadInfo* info) {
     //     EnterCriticalSection(&lockPTE);
     //     EnterCriticalSection(&lockStandbyList);
     // }
+    log_lock_event(LOCK_RELEASE, &lockStandbyList, USER);
     LeaveCriticalSection(&lockStandbyList);
 
     // We already have the page table lock
@@ -119,7 +127,9 @@ BOOL pageFaultHandler(PVOID arbitrary_va, threadInfo* info) {
         LeaveCriticalSection(&lockFreeList);
 
         EnterCriticalSection(&lockStandbyList);
+        log_lock_event(LOCK_ACQUIRE, &lockStandbyList, USER);
         boolean standby = !isEmpty(&headStandbyList);
+        log_lock_event(LOCK_RELEASE, &lockStandbyList, USER);
         LeaveCriticalSection(&lockStandbyList);
 
         if (free) {
@@ -146,9 +156,9 @@ BOOL pageFaultHandler(PVOID arbitrary_va, threadInfo* info) {
                 return SUCCESS;
             }
 
-            if (x->disk.diskIndex != 0) {
+            if (x->disk.disk == DISK) {
                 readFromDisk(x->disk.diskIndex, pfn2frameNumber(page), info);
-            }
+            } else return REDO;
             LeaveCriticalSection(&lockPTE);
         }
     }

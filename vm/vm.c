@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "../util.h"
+#include "../util/util.h"
 #include "../user/user.h"
 #include "../pt/pt.h"
 #include "../disk/disk.h"
@@ -27,6 +27,8 @@ pfn* pfnStart;
 PULONG_PTR vaStart;
 PVOID transferVa;
 PVOID diskTransferVa;
+lock_debug_buffer_t g_lock_debug_buffer;
+
 
 LONG64 activeCount;
 LONG64 pagesActivated;
@@ -392,6 +394,9 @@ full_virtual_memory_test (
         free->status = 0;
     }
 
+    g_lock_debug_buffer.head = 0;
+    g_lock_debug_buffer.count = 0;
+
     SetEvent(eventSystemStart);
 
     SetEvent(eventStartUser);
@@ -399,6 +404,8 @@ full_virtual_memory_test (
     for (int j = 0; j < THREADS; j++) {
         WaitForSingleObject (threadsUser[j], INFINITE);
     }
+
+    LeaveCriticalSection(&lockPTE);
 
     SetEvent(eventSystemShutdown);
 

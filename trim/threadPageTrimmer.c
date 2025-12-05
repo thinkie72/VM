@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "../util.h"
+#include "../util/util.h"
 #include "../pt/pt.h"
 #include "../list/list.h"
 #include "trim.h"

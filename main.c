@@ -6,17 +6,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "util.h"
+#include "util/util.h"
 #include "user/user.h"
 #include "pt/pt.h"
 #include "disk/disk.h"
 #include "list/list.h"
 
 VOID
-main (
-    int argc,
-    char** argv
-    )
+main (VOID)
 {
     //
     // Test a simple malloc implementation - we call the operating

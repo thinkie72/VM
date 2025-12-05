@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "../util.h"
+#include "../util/util.h"
 #include "../vm/vm.h"
 #include "disk.h"
 

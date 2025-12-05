@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "../util.h"
+#include "../util/util.h"
 #include "../user/user.h"
 #include "../disk/disk.h"
 #include "diskWrite.h"
@@ -19,6 +19,8 @@
 HANDLE eventStartDiskWrite; // these need to be initialized already
 HANDLE eventSystemStart;
 HANDLE eventSystemShutdown;
+
+PVOID diskTransferVa;
 
 // user thread sets trim event, wait on WaitingForPagesEvent--> wakes up trimmer, trimmer does work, trimmer sets mod write event
 // --> mod writer wakes up, does work, sets waiting for pages event --> user thread wakes up
@@ -65,13 +67,19 @@ void threadWriteToDisk(LPVOID lpParameter) {
 
             diskAddresses[i] = (ULONG64) disk + writeIndex * PAGE_SIZE;
             pages[i] = linkRemoveHead(&headModifiedList);
+            ULONG64 page = (ULONG64) pages[i];
+            ULONG64 head = (ULONG64) &headModifiedList;
+            if (page == head) {
+                i--;
+                break;
+            }
             frameNumbers[i] = pfn2frameNumber(pages[i]);
             pages[i]->diskIndex = writeIndex;
         }
         LeaveCriticalSection(&lockModifiedList);
 
         // If all the disk slots are full or the modified list is (somehow) empty then return and release PTE lock
-        if (i == 0) {
+        if (i <= 0) {
             LeaveCriticalSection(&lockPTE);
             SetEvent(eventRedoFault);
             continue;
@@ -81,6 +89,7 @@ void threadWriteToDisk(LPVOID lpParameter) {
         ASSERT(MapUserPhysicalPages(diskTransferVa, i, frameNumbers));
 
         EnterCriticalSection(&lockStandbyList);
+        log_lock_event(LOCK_ACQUIRE, &lockStandbyList, WRITER);
         for (int j = 0; j < i; j++) {
             PVOID sourceAddr = (PVOID)((ULONG64)diskTransferVa + j * PAGE_SIZE);
             PVOID destAddr = (PVOID)diskAddresses[j];
@@ -94,8 +103,9 @@ void threadWriteToDisk(LPVOID lpParameter) {
             pages[j]->status = STANDBY;
             linkAdd(pages[j], &headStandbyList);
         }
-        LeaveCriticalSection(&lockPTE);
+        log_lock_event(LOCK_RELEASE, &lockStandbyList, WRITER);
         LeaveCriticalSection(&lockStandbyList);
+        LeaveCriticalSection(&lockPTE);
 
         // Unmap the pages
         ASSERT(MapUserPhysicalPages(diskTransferVa, i, NULL));
