@@ -70,6 +70,7 @@ void readFromDisk(ULONG64 readIndex, ULONG64 frameNumber, threadInfo* info) {
     // reverse write to disk
     PVOID diskAddress = (PVOID) ((ULONG64) disk + readIndex * PAGE_SIZE);
 
+    // TODO: change asserts to only check return values, not fnc call
     ASSERT(MapUserPhysicalPages(info->transferVa, 1, &frameNumber));
 
     // Copy from mapped page to malloced disk

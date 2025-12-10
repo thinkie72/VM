@@ -46,7 +46,7 @@ void threadPageTrimmer(LPVOID lpParameter) {
 
         // do your work
 
-        EnterCriticalSection(&lockPTE);
+        acquireLock(&lockPTE, TRIMMER);
 
         int i = 0;
         ULONG64 scanIndex = 0;  // Remember where we left off
@@ -77,7 +77,7 @@ void threadPageTrimmer(LPVOID lpParameter) {
             ASSERT(MapUserPhysicalPagesScatter(batch, i, NULL));
         }
 
-        EnterCriticalSection(&lockModifiedList);
+        acquireLock(&lockModifiedList, TRIMMER);
         for (int j = 0; j < i; j++) {
             pages[j]->pte->transition.invalid = INVALID;
             InterlockedDecrement64(&activeCount);
@@ -85,8 +85,8 @@ void threadPageTrimmer(LPVOID lpParameter) {
             pages[j]->status = MODIFIED;
             linkAdd(pages[j], &headModifiedList);
         }
-        LeaveCriticalSection(&lockPTE);
-        LeaveCriticalSection(&lockModifiedList);
+        releaseLock(&lockModifiedList, TRIMMER);
+        releaseLock(&lockPTE, TRIMMER);
 
 
         // signal whoever is waiting on your work, if applicable

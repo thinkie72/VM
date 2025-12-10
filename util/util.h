@@ -5,7 +5,7 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-#include <winbase.h>
+#include <windows.h>
 
 #define USER 1
 #define WRITER 2
@@ -47,5 +47,8 @@ extern lock_debug_buffer_t g_lock_debug_buffer;
 // Log a lock event
 void log_lock_event(lock_event_type_t type, void* lock_addr, int typeOfThread);
 
+void acquireLock(CRITICAL_SECTION* lock, int typeOfThread);
+
+void releaseLock(CRITICAL_SECTION* lock, int typeOfThread);
 
 #endif //UTIL_H

@@ -20,8 +20,17 @@ void log_lock_event(lock_event_type_t type, void* lock_addr, int typeOfThread) {
 
     // Update circular buffer indices
     g_lock_debug_buffer.head = (g_lock_debug_buffer.head + 1) % BUFFER_SIZE;
-    if (g_lock_debug_buffer.count < BUFFER_SIZE) {
-        g_lock_debug_buffer.count++;
-    }
+    g_lock_debug_buffer.count++;
 #endif
 }
+
+void acquireLock(CRITICAL_SECTION* lock, int typeOfThread) {
+    EnterCriticalSection(lock);
+    log_lock_event(LOCK_ACQUIRE, lock, typeOfThread);
+}
+
+void releaseLock(CRITICAL_SECTION* lock, int typeOfThread) {
+    log_lock_event(LOCK_RELEASE, lock, typeOfThread);
+    LeaveCriticalSection(lock);
+}
+

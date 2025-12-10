@@ -212,6 +212,17 @@ PVOID initialize(ULONG64 numBytes) {
     return new;
 }
 
+VOID zeroAPage(ULONG64 frameNumber, threadInfo* info) {
+    BOOL b = MapUserPhysicalPages(info->transferVa, 1, &frameNumber);
+    ASSERT(b);
+
+    // Copy from mapped page to malloced disk
+    memset(info->transferVa, 0, PAGE_SIZE);
+
+    b = MapUserPhysicalPages(info->transferVa, 1, NULL);
+    ASSERT(b);
+}
+
 ULONG64 getMaxFrameNumber(PULONG_PTR pages) {
     ULONG64 maxFrameNumber = 0;
 
@@ -404,8 +415,6 @@ full_virtual_memory_test (
     for (int j = 0; j < THREADS; j++) {
         WaitForSingleObject (threadsUser[j], INFINITE);
     }
-
-    LeaveCriticalSection(&lockPTE);
 
     SetEvent(eventSystemShutdown);
 

@@ -6,6 +6,7 @@
 #include <windows.h>
 #include "../vm/vm.h"
 #include "list.h"
+#include "../util/util.h"
 
 // Global list heads
 LIST_ENTRY headFreeList;
@@ -43,6 +44,10 @@ VOID linkAdd(pfn* pfn, LIST_ENTRY* head) {
 }
 
 pfn* linkRemoveHead(LIST_ENTRY* head) {
+
+    if (isEmpty(head)) return NULL;
+
+    //  TODO: see if necessary
     // Handles case with removing last element in the list
     if (head->Flink->Flink == head) {
         pfn* freePage = (pfn*) head->Flink;

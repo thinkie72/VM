@@ -35,49 +35,28 @@ void activatePage(pfn* page, pte* new) {
     ULONG64 frameNumber = pfn2frameNumber(page);
     ASSERT(MapUserPhysicalPages(pte2va(new), 1, &frameNumber));
     page->diskIndex = 0;
-    EnterCriticalSection(&lockPTE) ;
     page->pte = new;
     page->status = ACTIVE;
     new->valid.valid = VALID;
     new->valid.frameNumber = frameNumber;
-    LeaveCriticalSection(&lockPTE);
     InterlockedIncrement64(&activeCount);
     InterlockedIncrement64(&pagesActivated);
     printf(".");
 }
 
 pfn* standbyFree(threadInfo* info) {
-    EnterCriticalSection(&lockStandbyList);
-    log_lock_event(LOCK_ACQUIRE, &lockStandbyList, USER);
-    // Set Trim Again
-    if (!isEmpty(&headStandbyList)) {
-        log_lock_event(LOCK_RELEASE, &lockStandbyList, USER);
-        LeaveCriticalSection(&lockStandbyList);
-        LeaveCriticalSection(&lockPTE);
-        SetEvent(eventStartTrim);
-        WaitForSingleObject(eventRedoFault, INFINITE);
-        EnterCriticalSection(&lockStandbyList);
-        log_lock_event(LOCK_ACQUIRE, &lockStandbyList, USER);
-    }
+    acquireLock(&lockStandbyList, USER);
     pfn* page = linkRemoveHead(&headStandbyList);
-    // if (isEmpty(&headStandbyList)) {
-    //     ResetEvent(eventPagesReady);
-    //     LeaveCriticalSection(&lockPTE);
-    //     LeaveCriticalSection(&lockStandbyList);
-    //     SetEvent(eventStartTrim);
-    //     WaitForSingleObject(eventPagesReady, INFINITE);
-    //     EnterCriticalSection(&lockPTE);
-    //     EnterCriticalSection(&lockStandbyList);
-    // }
-    log_lock_event(LOCK_RELEASE, &lockStandbyList, USER);
-    LeaveCriticalSection(&lockStandbyList);
+    releaseLock(&lockStandbyList, USER);
+    if (page == NULL) {
+        return NULL;
+    }
 
     // We already have the page table lock
-    EnterCriticalSection(&lockPTE);
+    // TODO: make separate acquire and release functions for PTE lock
     page->pte->disk.invalid = INVALID;
     page->pte->disk.disk = DISK;
     page->pte->disk.diskIndex = page->diskIndex;
-    LeaveCriticalSection(&lockPTE);
 
     ULONG64 frameNumber = pfn2frameNumber(page);
     ASSERT(MapUserPhysicalPages(info->transferVa, 1, &frameNumber));
@@ -100,68 +79,46 @@ BOOL pageFaultHandler(PVOID arbitrary_va, threadInfo* info) {
     // IT NEEDS TO BE REPLACED WITH A TRUE MEMORY MANAGEMENT
     // STATE MACHINE !
     //
-    EnterCriticalSection(&lockPTE);
+    acquireLock(&lockPTE, USER);
     pte* x = va2pte(arbitrary_va);
+    if (x->valid.valid == VALID) {
+        releaseLock(&lockPTE, USER);
+        return SUCCESS;
+    }
     pfn* page;
     boolean rescue = x->transition.transition == TRANSITION;
     if (rescue) {
         page = frameNumber2pfn(x->transition.frameNumber);
         // Add NULL check here
         ASSERT(page);
-
-        LeaveCriticalSection(&lockPTE);
-
-        if (x->valid.valid == VALID) return SUCCESS;
-
         if (page->status == STANDBY) {
             ASSERT(isFull[page->diskIndex]);
             isFull[page->diskIndex] = FALSE;
         }
         linkRemovePFN(page);
     } else {
-        LeaveCriticalSection(&lockPTE);
         // Now we know the pte is in zero or disk format (can't be active b/c it won't be faulted on)
         // Either way, we need a free page
-        EnterCriticalSection(&lockFreeList);
-        boolean free = !isEmpty(&headFreeList);
-        LeaveCriticalSection(&lockFreeList);
-
-        EnterCriticalSection(&lockStandbyList);
-        log_lock_event(LOCK_ACQUIRE, &lockStandbyList, USER);
-        boolean standby = !isEmpty(&headStandbyList);
-        log_lock_event(LOCK_RELEASE, &lockStandbyList, USER);
-        LeaveCriticalSection(&lockStandbyList);
-
-        if (free) {
-            EnterCriticalSection(&lockFreeList);
-            page = linkRemoveHead(&headFreeList);
-            ASSERT(page);
-            LeaveCriticalSection(&lockFreeList);
-        } else {
-            if (standby) {
-                page = standbyFree(info);
-                ASSERT(page);
-            }
-            else {
-                ResetEvent(eventRedoFault);
+        acquireLock(&lockFreeList, USER);
+        page = linkRemoveHead(&headFreeList);
+        releaseLock(&lockFreeList, USER);
+        if (page == NULL){
+            page = standbyFree(info);
+            if (page == NULL) {
+                releaseLock(&lockPTE, USER);
                 SetEvent(eventStartTrim);
                 WaitForSingleObject(eventRedoFault, INFINITE);
                 return REDO;
             }
+        }
 
-            EnterCriticalSection(&lockPTE);
-
-            if (x->valid.valid == VALID) {
-                LeaveCriticalSection(&lockPTE);
-                return SUCCESS;
-            }
-
-            if (x->disk.disk == DISK) {
-                readFromDisk(x->disk.diskIndex, pfn2frameNumber(page), info);
-            } else return REDO;
-            LeaveCriticalSection(&lockPTE);
+        if (x->disk.disk == DISK) {
+            readFromDisk(x->disk.diskIndex, pfn2frameNumber(page), info);
+        } else {
+            zeroAPage(pfn2frameNumber(page), info);
         }
     }
     activatePage(page, x);
+    releaseLock(&lockPTE, USER);
     return SUCCESS;
 }

@@ -73,7 +73,7 @@
 #define REDO                        1
 #define SUCCESS                     0
 
-#define THREADS                     2
+#define THREADS                     8
 
 //
 // PTE structures
@@ -157,6 +157,7 @@ extern HANDLE eventStartUser;
 //
 BOOL GetPrivilege(VOID);
 PVOID initialize(ULONG64 numBytes);
+VOID zeroAPage(ULONG64 frameNumber, threadInfo* info);
 VOID full_virtual_memory_test(VOID);
 
 #if SUPPORT_MULTIPLE_VA_TO_SAME_PAGE
