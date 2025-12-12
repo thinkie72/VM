@@ -46,7 +46,7 @@ void threadPageTrimmer(LPVOID lpParameter) {
 
         // do your work
 
-        acquireLock(&lockPTE, TRIMMER);
+        acquireLockPTE(NULL, TRIMMER);
 
         int i = 0;
         ULONG64 scanIndex = 0;  // Remember where we left off
@@ -74,7 +74,8 @@ void threadPageTrimmer(LPVOID lpParameter) {
         }
 
         if (i != 0) {
-            ASSERT(MapUserPhysicalPagesScatter(batch, i, NULL));
+            BOOL b = MapUserPhysicalPagesScatter(batch, i, NULL);
+            ASSERT(b);
         }
 
         acquireLock(&lockModifiedList, TRIMMER);

@@ -4,6 +4,7 @@
 #include "util.h"
 #include <time.h>
 #include <winbase.h>
+#include "../list/list.h"
 
 void log_lock_event(lock_event_type_t type, void* lock_addr, int typeOfThread) {
 #if DBG
@@ -32,5 +33,15 @@ void acquireLock(CRITICAL_SECTION* lock, int typeOfThread) {
 void releaseLock(CRITICAL_SECTION* lock, int typeOfThread) {
     log_lock_event(LOCK_RELEASE, lock, typeOfThread);
     LeaveCriticalSection(lock);
+}
+
+void acquireLockPTE(pte* x, int typeOfThread) {
+    EnterCriticalSection(&lockPTE);
+    log_lock_event(LOCK_ACQUIRE, lock, typeOfThread);
+}
+
+void releaseLockPTE(pte* x, int typeOfThread) {
+    log_lock_event(LOCK_RELEASE, lock, typeOfThread);
+    LeaveCriticalSection(&lockPTE);
 }
 

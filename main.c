@@ -59,7 +59,6 @@ main (VOID)
     //
     // This is where we can be as creative as we like, the sky's the limit !
     //
-    // TODO: consider adding tick count to benchmark time elapsed
 
     ULONG64 start = GetTickCount64();
     full_virtual_memory_test ();

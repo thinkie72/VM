@@ -70,13 +70,15 @@ void readFromDisk(ULONG64 readIndex, ULONG64 frameNumber, threadInfo* info) {
     // reverse write to disk
     PVOID diskAddress = (PVOID) ((ULONG64) disk + readIndex * PAGE_SIZE);
 
-    // TODO: change asserts to only check return values, not fnc call
-    ASSERT(MapUserPhysicalPages(info->transferVa, 1, &frameNumber));
+    BOOL b;
+    b = MapUserPhysicalPages(info->transferVa, 1, &frameNumber);
+    ASSERT(b);
 
     // Copy from mapped page to malloced disk
-    ASSERT(memcpy(info->transferVa, diskAddress, PAGE_SIZE));
+    memcpy(info->transferVa, diskAddress, PAGE_SIZE);
 
-    ASSERT(MapUserPhysicalPages(info->transferVa, 1, NULL));
+    b = MapUserPhysicalPages(info->transferVa, 1, NULL);
+    ASSERT(b);
     
     isFull[readIndex] = FALSE;
     InterlockedDecrement64(&numFreeDiskSlots);

@@ -6,6 +6,7 @@
 #define UTIL_H
 
 #include <windows.h>
+#include "../vm/vm.h"
 
 #define USER 1
 #define WRITER 2
@@ -50,5 +51,9 @@ void log_lock_event(lock_event_type_t type, void* lock_addr, int typeOfThread);
 void acquireLock(CRITICAL_SECTION* lock, int typeOfThread);
 
 void releaseLock(CRITICAL_SECTION* lock, int typeOfThread);
+
+void acquireLockPTE(pte* x, int typeOfThread);
+
+void releaseLockPTE(pte* x, int typeOfThread);
 
 #endif //UTIL_H

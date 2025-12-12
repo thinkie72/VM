@@ -33,7 +33,8 @@ ULONG64 pfn2frameNumber (pfn* p) {
 
 void activatePage(pfn* page, pte* new) {
     ULONG64 frameNumber = pfn2frameNumber(page);
-    ASSERT(MapUserPhysicalPages(pte2va(new), 1, &frameNumber));
+    BOOL b = MapUserPhysicalPages(pte2va(new), 1, &frameNumber);
+    ASSERT(b);
     page->diskIndex = 0;
     page->pte = new;
     page->status = ACTIVE;
@@ -53,18 +54,18 @@ pfn* standbyFree(threadInfo* info) {
     }
 
     // We already have the page table lock
-    // TODO: make separate acquire and release functions for PTE lock
     page->pte->disk.invalid = INVALID;
     page->pte->disk.disk = DISK;
     page->pte->disk.diskIndex = page->diskIndex;
 
     ULONG64 frameNumber = pfn2frameNumber(page);
-    ASSERT(MapUserPhysicalPages(info->transferVa, 1, &frameNumber));
+    BOOL b = MapUserPhysicalPages(info->transferVa, 1, &frameNumber);
+    ASSERT(b);
 
     // Zero the page content, not the PFN structure
     memset(info->transferVa, 0, PAGE_SIZE);  // Use transferVa, which points to the mapped page
 
-    ASSERT(MapUserPhysicalPages(info->transferVa, 1, NULL));
+    b = MapUserPhysicalPages(info->transferVa, 1, NULL);
 
     return page;
 }
@@ -79,7 +80,7 @@ BOOL pageFaultHandler(PVOID arbitrary_va, threadInfo* info) {
     // IT NEEDS TO BE REPLACED WITH A TRUE MEMORY MANAGEMENT
     // STATE MACHINE !
     //
-    acquireLock(&lockPTE, USER);
+    acquireLockPTE(NULL, USER);
     pte* x = va2pte(arbitrary_va);
     if (x->valid.valid == VALID) {
         releaseLock(&lockPTE, USER);

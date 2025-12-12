@@ -53,7 +53,7 @@ void threadWriteToDisk(LPVOID lpParameter) {
 
 
         // do your work
-        acquireLock(&lockPTE, WRITER);
+        acquireLockPTE(NULL, WRITER);
         acquireLock(&lockModifiedList, WRITER);
 
 
@@ -83,8 +83,11 @@ void threadWriteToDisk(LPVOID lpParameter) {
             continue;
         }
 
+        BOOL b;
+
         // Map page contents from their frame number spots to transfer va
-        ASSERT(MapUserPhysicalPages(diskTransferVa, i, frameNumbers));
+        b = MapUserPhysicalPages(diskTransferVa, i, frameNumbers);
+        ASSERT(b);
 
         acquireLock(&lockStandbyList, WRITER);
         for (int j = 0; j < i; j++) {
@@ -94,7 +97,7 @@ void threadWriteToDisk(LPVOID lpParameter) {
             // Check if addresses look reasonable
             ASSERT(sourceAddr != NULL && destAddr != NULL);
 
-            ASSERT(memcpy(destAddr, sourceAddr, PAGE_SIZE));
+            memcpy(destAddr, sourceAddr, PAGE_SIZE);
 
             // something here for rescue before write or between steps
             pages[j]->status = STANDBY;
@@ -104,7 +107,8 @@ void threadWriteToDisk(LPVOID lpParameter) {
         releaseLock(&lockPTE, WRITER);
 
         // Unmap the pages
-        ASSERT(MapUserPhysicalPages(diskTransferVa, i, NULL));
+        b = MapUserPhysicalPages(diskTransferVa, i, NULL);
+        ASSERT(b);
 
         // signal whoever is waiting on your work, if applicable
         SetEvent(eventRedoFault); // might be the trimmer setting the mod writer event, or the mod writer setting the waiting-for-pages event for the users
@@ -112,7 +116,6 @@ void threadWriteToDisk(LPVOID lpParameter) {
 
     // We want the thread to run forever, so we should not exit the while loop
     DebugBreak();
-    return;
 }
 
 /*

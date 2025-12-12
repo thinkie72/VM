@@ -47,14 +47,7 @@ pfn* linkRemoveHead(LIST_ENTRY* head) {
 
     if (isEmpty(head)) return NULL;
 
-    //  TODO: see if necessary
-    // Handles case with removing last element in the list
-    if (head->Flink->Flink == head) {
-        pfn* freePage = (pfn*) head->Flink;
-        head->Flink = head;
-        head->Blink = head;
-        return freePage;
-    }
+
 
     pfn* freePage = (pfn*) head->Flink;
     head->Flink = freePage->entry.Flink;
